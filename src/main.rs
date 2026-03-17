@@ -6,6 +6,7 @@ mod language;
 mod util;
 
 use clap::{Parser, Subcommand};
+use std::env;
 use std::path::PathBuf;
 use std::process;
 
@@ -71,26 +72,41 @@ enum Commands {
     },
 }
 
+fn resolve_root(project: Option<PathBuf>) -> PathBuf {
+    match project {
+        Some(p) => p,
+        None => {
+            let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            util::git::find_project_root(&cwd)
+        }
+    }
+}
+
 fn main() {
     let cli = Cli::parse();
+    let root = resolve_root(cli.project);
 
     let exit_code = match cli.command {
         Commands::Overview { file } => {
+            let _index = index::Index::load_or_build(&root);
             eprintln!("cx overview: not implemented yet");
             let _ = file;
             1
         }
         Commands::Symbols { file, name, kind } => {
+            let _index = index::Index::load_or_build(&root);
             eprintln!("cx symbols: not implemented yet");
             let _ = (file, name, kind);
             1
         }
         Commands::Definition { name, from, max_lines } => {
+            let _index = index::Index::load_or_build(&root);
             eprintln!("cx definition: not implemented yet");
             let _ = (name, from, max_lines);
             1
         }
         Commands::Read { file, fresh } => {
+            let _index = index::Index::load_or_build(&root);
             eprintln!("cx read: not implemented yet");
             let _ = (file, fresh);
             1
