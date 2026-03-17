@@ -182,7 +182,7 @@ impl Index {
 
             // Parse and extract symbols
             let symbols = match fs::read(path) {
-                Ok(source) => parse_and_extract(lang, &source),
+                Ok(source) => parse_and_extract(lang, &source, path),
                 Err(e) => {
                     eprintln!("cx: warning: failed to read {}: {}", path.display(), e);
                     Vec::new()
@@ -266,7 +266,7 @@ impl Index {
                     // Re-parse and extract symbols
                     let abs_path = self.root.join(path);
                     let symbols = match fs::read(&abs_path) {
-                        Ok(source) => parse_and_extract(*lang, &source),
+                        Ok(source) => parse_and_extract(*lang, &source, &abs_path),
                         Err(_) => Vec::new(),
                     };
                     self.exports.insert(path.clone(), symbols);
