@@ -156,27 +156,16 @@ fn build_ts_signature(node: Node, source: &[u8]) -> String {
         .to_string()
 }
 
-/// Check if the node is exported: preceded by `export` keyword or inside export_statement.
-fn is_ts_exported(node: Node, source: &[u8]) -> bool {
-    // Check if parent is an export_statement
-    if let Some(parent) = node.parent() {
-        if parent.kind() == "export_statement" {
+/// Check if the node is exported by walking up the ancestor chain
+/// looking for an export_statement node.
+fn is_ts_exported(node: Node, _source: &[u8]) -> bool {
+    let mut current = node.parent();
+    while let Some(ancestor) = current {
+        if ancestor.kind() == "export_statement" {
             return true;
         }
+        current = ancestor.parent();
     }
-
-    // Check if the text before this node on the same line starts with "export"
-    let start = node.start_byte();
-    if start >= 7 {
-        let prefix = &source[start.saturating_sub(20)..start];
-        if prefix.ends_with(b"export ")
-            || prefix.ends_with(b"export default ")
-            || prefix.ends_with(b"export declare ")
-        {
-            return true;
-        }
-    }
-
     false
 }
 
@@ -286,6 +275,18 @@ mod tests {
 
         assert_eq!(symbols.len(), 1);
         assert_eq!(symbols[0].name, "App");
+        assert!(symbols[0].is_exported);
+    }
+
+    #[test]
+    fn test_export_default_function() {
+        let src = "export default function handler() { return 1; }";
+        let tree = parse_ts(src);
+        let module = TypeScriptModule;
+        let symbols = module.extract_symbols(&tree, src.as_bytes());
+
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "handler");
         assert!(symbols[0].is_exported);
     }
 

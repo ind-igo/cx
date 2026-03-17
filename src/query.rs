@@ -3,9 +3,62 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
+use serde::Serialize;
+
 use crate::index::{Index, ReadCache, Symbol, SymbolKind};
-use crate::output::{toon_table, toon_scalar};
+use crate::output::{print_toon, print_json};
 use crate::util::glob::glob_match;
+
+// --- Serializable output types ---
+
+#[derive(Serialize)]
+struct SymbolRowSingle {
+    name: String,
+    kind: String,
+    signature: String,
+}
+
+#[derive(Serialize)]
+struct SymbolRowFull {
+    file: String,
+    name: String,
+    kind: String,
+    signature: String,
+}
+
+#[derive(Serialize)]
+struct DefinitionResult {
+    file: String,
+    signature: String,
+    range: (usize, usize),
+    #[serde(skip_serializing_if = "Option::is_none")]
+    truncated: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lines: Option<usize>,
+    body: String,
+}
+
+#[derive(Serialize)]
+struct ReadUnchanged {
+    status: &'static str,
+    file: String,
+    hash: String,
+}
+
+#[derive(Serialize)]
+struct ReadChanged {
+    status: &'static str,
+    file: String,
+    content: String,
+}
+
+#[derive(Serialize)]
+struct ReadFull {
+    file: String,
+    content: String,
+}
+
+// --- Query implementations ---
 
 /// Result row for symbols query — includes file path context.
 struct SymbolRow {
@@ -44,14 +97,12 @@ pub fn symbols(
 
     for (path, syms) in files_to_search {
         for sym in syms {
-            // Apply name glob filter
             if let Some(pattern) = name_glob {
                 if !glob_match(pattern, &sym.name) {
                     continue;
                 }
             }
 
-            // Apply kind filter
             if let Some(kind) = kind_filter {
                 if sym.kind != kind {
                     continue;
@@ -72,77 +123,30 @@ pub fn symbols(
     // Sort by file then name for stable output
     rows.sort_by(|a, b| a.file.cmp(&b.file).then(a.symbol.name.cmp(&b.symbol.name)));
 
-    if json {
-        print_symbols_json(&rows, single_file);
+    if single_file {
+        let out: Vec<SymbolRowSingle> = rows
+            .iter()
+            .map(|r| SymbolRowSingle {
+                name: r.symbol.name.clone(),
+                kind: r.symbol.kind.as_str().to_string(),
+                signature: r.symbol.signature.clone(),
+            })
+            .collect();
+        if json { print_json(&out) } else { print_toon(&out) }
     } else {
-        print_symbols_toon(&rows, single_file);
+        let out: Vec<SymbolRowFull> = rows
+            .iter()
+            .map(|r| SymbolRowFull {
+                file: r.file.display().to_string(),
+                name: r.symbol.name.clone(),
+                kind: r.symbol.kind.as_str().to_string(),
+                signature: r.symbol.signature.clone(),
+            })
+            .collect();
+        if json { print_json(&out) } else { print_toon(&out) }
     }
 
     0
-}
-
-fn print_symbols_toon(rows: &[SymbolRow], single_file: bool) {
-    if single_file {
-        let fields = &["name", "kind", "signature"];
-        let table_rows: Vec<Vec<String>> = rows
-            .iter()
-            .map(|r| {
-                vec![
-                    r.symbol.name.clone(),
-                    r.symbol.kind.as_str().to_string(),
-                    r.symbol.signature.clone(),
-                ]
-            })
-            .collect();
-        print!("{}", toon_table("symbols", fields, &table_rows));
-    } else {
-        let fields = &["file", "name", "kind", "signature"];
-        let table_rows: Vec<Vec<String>> = rows
-            .iter()
-            .map(|r| {
-                vec![
-                    r.file.display().to_string(),
-                    r.symbol.name.clone(),
-                    r.symbol.kind.as_str().to_string(),
-                    r.symbol.signature.clone(),
-                ]
-            })
-            .collect();
-        print!("{}", toon_table("symbols", fields, &table_rows));
-    }
-}
-
-fn print_symbols_json(rows: &[SymbolRow], single_file: bool) {
-    let json_rows: Vec<serde_json::Value> = rows
-        .iter()
-        .map(|r| {
-            let mut map = serde_json::Map::new();
-            if !single_file {
-                map.insert(
-                    "file".into(),
-                    serde_json::Value::String(r.file.display().to_string()),
-                );
-            }
-            map.insert(
-                "name".into(),
-                serde_json::Value::String(r.symbol.name.clone()),
-            );
-            map.insert(
-                "kind".into(),
-                serde_json::Value::String(r.symbol.kind.as_str().to_string()),
-            );
-            map.insert(
-                "signature".into(),
-                serde_json::Value::String(r.symbol.signature.clone()),
-            );
-            serde_json::Value::Object(map)
-        })
-        .collect();
-
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&json_rows).unwrap_or_default()
-    );
 }
 
 /// Execute the definition query: find symbol by exact name, return its body.
@@ -181,10 +185,38 @@ pub fn definition(
         return 2;
     }
 
+    let results: Vec<DefinitionResult> = matches
+        .iter()
+        .map(|(path, sym)| {
+            let body = read_body(&index.root, path, sym.byte_range).unwrap_or_default();
+            let line_count = body.lines().count();
+            let truncated = line_count > max_lines;
+
+            let display_body = if truncated {
+                body.lines()
+                    .take(max_lines)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            } else {
+                body
+            };
+
+            DefinitionResult {
+                file: path.display().to_string(),
+                signature: sym.signature.clone(),
+                range: sym.byte_range,
+                truncated: if truncated { Some(true) } else { None },
+                lines: if truncated { Some(line_count) } else { None },
+                body: display_body,
+            }
+        })
+        .collect();
+
+    // Always return an array for consistent JSON schema
     if json {
-        print_definitions_json(&matches, &index.root, max_lines);
+        print_json(&results);
     } else {
-        print_definitions_toon(&matches, &index.root, max_lines);
+        print_toon(&results);
     }
 
     0
@@ -198,83 +230,6 @@ fn read_body(root: &Path, file: &Path, byte_range: (usize, usize)) -> Option<Str
         return None;
     }
     Some(String::from_utf8_lossy(&source[start..end]).to_string())
-}
-
-fn print_definitions_toon(matches: &[(&PathBuf, &Symbol)], root: &Path, max_lines: usize) {
-    for (path, sym) in matches {
-        let body = read_body(root, path, sym.byte_range).unwrap_or_default();
-        let line_count = body.lines().count();
-        let truncated = line_count > max_lines;
-
-        let display_body = if truncated {
-            body.lines()
-                .take(max_lines)
-                .collect::<Vec<_>>()
-                .join("\n")
-        } else {
-            body
-        };
-
-        let range_str = format!("[{},{}]", sym.byte_range.0, sym.byte_range.1);
-
-        let mut fields: Vec<(&str, String)> = vec![
-            ("file", path.display().to_string()),
-            ("signature", sym.signature.clone()),
-            ("range", range_str),
-        ];
-
-        if truncated {
-            fields.push(("truncated", "true".to_string()));
-            fields.push(("lines", line_count.to_string()));
-        }
-
-        fields.push(("body", display_body));
-
-        let field_refs: Vec<(&str, &str)> = fields.iter().map(|(k, v)| (*k, &**v)).collect();
-        print!("{}", toon_scalar(&field_refs));
-
-        // Separator between multiple results
-        if matches.len() > 1 {
-            println!("---");
-        }
-    }
-}
-
-fn print_definitions_json(matches: &[(&PathBuf, &Symbol)], root: &Path, max_lines: usize) {
-    let json_results: Vec<serde_json::Value> = matches
-        .iter()
-        .map(|(path, sym)| {
-            let body = read_body(root, path, sym.byte_range).unwrap_or_default();
-            let line_count = body.lines().count();
-            let truncated = line_count > max_lines;
-
-            let display_body = if truncated {
-                body.lines()
-                    .take(max_lines)
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            } else {
-                body
-            };
-
-            let mut map = serde_json::Map::new();
-            map.insert("file".into(), serde_json::Value::String(path.display().to_string()));
-            map.insert("signature".into(), serde_json::Value::String(sym.signature.clone()));
-            map.insert("range".into(), serde_json::json!([sym.byte_range.0, sym.byte_range.1]));
-            if truncated {
-                map.insert("truncated".into(), serde_json::Value::Bool(true));
-                map.insert("lines".into(), serde_json::json!(line_count));
-            }
-            map.insert("body".into(), serde_json::Value::String(display_body));
-            serde_json::Value::Object(map)
-        })
-        .collect();
-
-    if json_results.len() == 1 {
-        println!("{}", serde_json::to_string_pretty(&json_results[0]).unwrap_or_default());
-    } else {
-        println!("{}", serde_json::to_string_pretty(&json_results).unwrap_or_default());
-    }
 }
 
 /// Execute the read command with session-scoped cache.
@@ -295,7 +250,6 @@ pub fn read(index: &mut Index, file: &Path, fresh: bool, json: bool) -> i32 {
     let content_str = String::from_utf8_lossy(&content);
 
     if fresh {
-        // Always return full content, update cache
         update_cache(index, &rel, content_hash);
         print_read_content(&rel, &content_str, json);
         return 0;
@@ -307,47 +261,30 @@ pub fn read(index: &mut Index, file: &Path, fresh: bool, json: bool) -> i32 {
     if let Some(entry) = index.files.get(&rel) {
         if let Some(ref cache) = entry.read_cache {
             if cache.session_id == session_id {
-                // Cache hit — check if content changed
                 if cache.content_hash == content_hash {
                     // Unchanged
-                    let hash_hex = format!("{:08x}", content_hash);
-                    if json {
-                        let obj = serde_json::json!({
-                            "status": "unchanged",
-                            "file": rel.display().to_string(),
-                            "hash": hash_hex,
-                        });
-                        println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
-                    } else {
-                        print!(
-                            "{}",
-                            toon_scalar(&[
-                                ("status", "unchanged"),
-                                ("file", &rel.display().to_string()),
-                                ("hash", &hash_hex),
-                            ])
-                        );
-                    }
+                    let out = ReadUnchanged {
+                        status: "unchanged",
+                        file: rel.display().to_string(),
+                        hash: format!("{:08x}", content_hash),
+                    };
+                    if json { print_json(&out) } else { print_toon(&out) }
                     return 0;
                 } else {
                     // Changed — return full new content
                     update_cache(index, &rel, content_hash);
                     if json {
-                        let obj = serde_json::json!({
-                            "status": "changed",
-                            "file": rel.display().to_string(),
-                            "content": content_str,
+                        print_json(&ReadChanged {
+                            status: "changed",
+                            file: rel.display().to_string(),
+                            content: content_str.to_string(),
                         });
-                        println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
                     } else {
-                        print!(
-                            "{}",
-                            toon_scalar(&[
-                                ("status", "changed"),
-                                ("file", &rel.display().to_string()),
-                            ])
-                        );
-                        println!("{}", content_str);
+                        print_toon(&ReadChanged {
+                            status: "changed",
+                            file: rel.display().to_string(),
+                            content: content_str.to_string(),
+                        });
                     }
                     return 0;
                 }
@@ -363,11 +300,10 @@ pub fn read(index: &mut Index, file: &Path, fresh: bool, json: bool) -> i32 {
 
 fn print_read_content(rel: &Path, content: &str, json: bool) {
     if json {
-        let obj = serde_json::json!({
-            "file": rel.display().to_string(),
-            "content": content,
+        print_json(&ReadFull {
+            file: rel.display().to_string(),
+            content: content.to_string(),
         });
-        println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
     } else {
         println!("{}", content);
     }

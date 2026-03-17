@@ -1,6 +1,5 @@
 mod index;
 mod output;
-mod grep;
 mod query;
 mod language;
 mod util;
@@ -64,12 +63,6 @@ enum Commands {
         #[arg(long)]
         fresh: bool,
     },
-    /// grep-compatible passthrough to rg
-    Grep {
-        /// Arguments passed through to rg/grep
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
 }
 
 fn resolve_root(project: Option<PathBuf>) -> PathBuf {
@@ -103,9 +96,6 @@ fn main() {
         Commands::Read { file, fresh } => {
             let mut idx = index::Index::load_or_build(&root);
             query::read(&mut idx, &file, fresh, cli.json)
-        }
-        Commands::Grep { args } => {
-            grep::run(&args)
         }
     };
 

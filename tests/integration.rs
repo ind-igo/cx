@@ -11,7 +11,7 @@ fn overview_main_rs() {
     let out = cx().args(["overview", "src/main.rs"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
-    assert!(stdout.contains("symbols["));
+    assert!(stdout.contains("{name,kind,signature}:"), "should have TOON header: {stdout}");
     assert!(stdout.contains("main,fn,"));
     assert!(stdout.contains("resolve_root,fn,"));
 }
@@ -22,8 +22,7 @@ fn symbols_kind_fn() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success());
     assert!(stdout.contains("main,fn,"));
-    assert!(stdout.contains("run,fn,"));
-    assert!(stdout.contains("toon_table,fn,"));
+    assert!(stdout.contains("print_toon,fn,"));
 }
 
 #[test]
@@ -31,10 +30,9 @@ fn definition_main() {
     let out = cx().args(["definition", "--name", "main"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success());
-    assert!(stdout.contains("file: src/main.rs"));
-    assert!(stdout.contains("signature: fn main()"));
-    assert!(stdout.contains("body: |"));
-    assert!(stdout.contains("Cli::parse()"));
+    assert!(stdout.contains("file: src/main.rs"), "{stdout}");
+    assert!(stdout.contains("signature: fn main()"), "{stdout}");
+    assert!(stdout.contains("Cli::parse()"), "{stdout}");
 }
 
 #[test]
@@ -44,14 +42,6 @@ fn read_returns_content() {
     assert!(out.status.success());
     assert!(stdout.contains("mod index;"));
     assert!(stdout.contains("fn main()"));
-}
-
-#[test]
-fn grep_finds_matches() {
-    let out = cx().args(["grep", "-rn", "fn main", "src/"]).output().unwrap();
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(out.status.success());
-    assert!(stdout.contains("src/main.rs"));
 }
 
 #[test]
@@ -76,4 +66,16 @@ fn json_overview() {
     let parsed: serde_json::Value = serde_json::from_str(&stdout)
         .expect("should be valid JSON");
     assert!(parsed.is_array());
+}
+
+#[test]
+fn json_definition_always_array() {
+    let out = cx().args(["--json", "definition", "--name", "main"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success());
+    let parsed: serde_json::Value = serde_json::from_str(&stdout)
+        .expect("should be valid JSON");
+    // Always an array, even for single results (audit fix)
+    assert!(parsed.is_array(), "definition JSON should always be an array: {stdout}");
+    assert_eq!(parsed.as_array().unwrap().len(), 1);
 }
