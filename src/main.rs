@@ -97,10 +97,8 @@ fn main() {
             query::symbols(&idx, file.as_deref(), name.as_deref(), kind_filter, file.is_some(), cli.json)
         }
         Commands::Definition { name, from, max_lines } => {
-            let _index = index::Index::load_or_build(&root);
-            eprintln!("cx definition: not implemented yet");
-            let _ = (name, from, max_lines);
-            1
+            let idx = index::Index::load_or_build(&root);
+            query::definition(&idx, &name, from.as_deref(), max_lines, cli.json)
         }
         Commands::Read { file, fresh } => {
             let _index = index::Index::load_or_build(&root);
