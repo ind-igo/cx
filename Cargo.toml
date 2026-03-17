@@ -14,3 +14,6 @@ rayon = "1"
 clap = { version = "4", features = ["derive"] }
 toon-format = "0.4"
 walkdir = "2"
+
+[dev-dependencies]
+tempfile = "3"

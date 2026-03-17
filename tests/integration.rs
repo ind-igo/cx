@@ -1,8 +1,32 @@
 use std::process::Command;
+use std::io::Write;
 
 fn cx() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_cx"));
     cmd.current_dir(env!("CARGO_MANIFEST_DIR"));
+    cmd
+}
+
+/// Create a temporary directory with a fake git repo for isolated tests.
+/// Returns the temp dir (dropped = cleaned up).
+fn temp_project(files: &[(&str, &str)]) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    // Create .git so cx finds project root
+    std::fs::create_dir(dir.path().join(".git")).unwrap();
+    for (path, content) in files {
+        let full = dir.path().join(path);
+        if let Some(parent) = full.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        let mut f = std::fs::File::create(&full).unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+    }
+    dir
+}
+
+fn cx_in(dir: &std::path::Path) -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_cx"));
+    cmd.current_dir(dir);
     cmd
 }
 
@@ -78,4 +102,113 @@ fn json_definition_always_array() {
     // Always an array, even for single results (audit fix)
     assert!(parsed.is_array(), "definition JSON should always be an array: {stdout}");
     assert_eq!(parsed.as_array().unwrap().len(), 1);
+}
+
+// --- Read session cache tests ---
+
+#[test]
+fn read_cache_unchanged_on_reread() {
+    let dir = temp_project(&[("src/hello.rs", "fn hello() {}\n")]);
+    // First read — returns content
+    let out1 = cx_in(dir.path()).args(["read", "src/hello.rs"]).output().unwrap();
+    let stdout1 = String::from_utf8_lossy(&out1.stdout);
+    assert!(out1.status.success());
+    assert!(stdout1.contains("fn hello()"), "first read should return content: {stdout1}");
+
+    // Second read — should return unchanged
+    let out2 = cx_in(dir.path()).args(["read", "src/hello.rs"]).output().unwrap();
+    let stdout2 = String::from_utf8_lossy(&out2.stdout);
+    assert!(out2.status.success());
+    assert!(stdout2.contains("unchanged"), "second read should be unchanged: {stdout2}");
+}
+
+#[test]
+fn read_cache_detects_change() {
+    let dir = temp_project(&[("src/hello.rs", "fn hello() {}\n")]);
+    // First read
+    let _ = cx_in(dir.path()).args(["read", "src/hello.rs"]).output().unwrap();
+
+    // Modify the file
+    std::fs::write(dir.path().join("src/hello.rs"), "fn hello_changed() {}\n").unwrap();
+
+    // Second read — should detect change
+    let out = cx_in(dir.path()).args(["read", "src/hello.rs"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success());
+    assert!(stdout.contains("changed"), "should detect change: {stdout}");
+    assert!(stdout.contains("hello_changed"), "should return new content: {stdout}");
+}
+
+// --- Definition --from and --max-lines tests ---
+
+#[test]
+fn definition_from_disambiguates() {
+    let dir = temp_project(&[
+        ("src/a.rs", "pub fn helper() { 1 }\n"),
+        ("src/b.rs", "pub fn helper() { 2 }\n"),
+    ]);
+
+    // Without --from: should find both
+    let out = cx_in(dir.path()).args(["--json", "definition", "--name", "helper"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(parsed.as_array().unwrap().len(), 2, "should find both: {stdout}");
+
+    // With --from: should find only one
+    let out2 = cx_in(dir.path())
+        .args(["--json", "definition", "--name", "helper", "--from", "src/a.rs"])
+        .output()
+        .unwrap();
+    let stdout2 = String::from_utf8_lossy(&out2.stdout);
+    let parsed2: serde_json::Value = serde_json::from_str(&stdout2).unwrap();
+    let arr = parsed2.as_array().unwrap();
+    assert_eq!(arr.len(), 1, "should find one: {stdout2}");
+    assert_eq!(arr[0]["file"].as_str().unwrap(), "src/a.rs");
+}
+
+#[test]
+fn definition_max_lines_truncates() {
+    // Create a file with a long function
+    let mut body = String::from("pub fn big() {\n");
+    for i in 0..250 {
+        body.push_str(&format!("    let x{i} = {i};\n"));
+    }
+    body.push_str("}\n");
+
+    let dir = temp_project(&[("src/big.rs", &body)]);
+
+    // Default max-lines (200) should truncate
+    let out = cx_in(dir.path())
+        .args(["--json", "definition", "--name", "big"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let item = &parsed.as_array().unwrap()[0];
+    assert_eq!(item["truncated"].as_bool(), Some(true), "should be truncated: {stdout}");
+    assert!(item["lines"].as_u64().unwrap() > 200, "should report total lines: {stdout}");
+}
+
+// --- JSON output for definition and read ---
+
+#[test]
+fn json_definition_has_expected_fields() {
+    let out = cx().args(["--json", "definition", "--name", "main"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let item = &parsed.as_array().unwrap()[0];
+    assert!(item["file"].is_string());
+    assert!(item["signature"].is_string());
+    assert!(item["range"].is_array());
+    assert!(item["body"].is_string());
+}
+
+#[test]
+fn json_read_returns_content() {
+    let out = cx().args(["--json", "read", "src/main.rs", "--fresh"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success());
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert!(parsed["file"].is_string());
+    assert!(parsed["content"].as_str().unwrap().contains("fn main()"));
 }
