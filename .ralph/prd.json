@@ -16,7 +16,7 @@
         "util/git.rs finds .git walking up from a subdirectory"
       ],
       "depends_on": [],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "2",
@@ -32,7 +32,7 @@
         "Skipped directories (target/, node_modules/, .git/) are not indexed"
       ],
       "depends_on": ["1"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "3",
@@ -47,7 +47,7 @@
         "Function signatures end before the opening '{'"
       ],
       "depends_on": ["2"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "4",
@@ -63,7 +63,7 @@
         "cx symbols --name 'nonexistent' exits with code 2"
       ],
       "depends_on": ["3"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "5",
@@ -78,7 +78,7 @@
         "Bodies exceeding --max-lines are truncated with truncated: true and lines: N"
       ],
       "depends_on": ["4"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "6",
@@ -94,7 +94,7 @@
         "Different PPID gets a fresh session (no false 'unchanged')"
       ],
       "depends_on": ["4"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "7",
@@ -107,7 +107,7 @@
         "All flags pass through correctly (e.g., -i, -l, --count)"
       ],
       "depends_on": ["1"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "8",
@@ -121,7 +121,7 @@
         ".tsx, .js, .jsx extensions all route to TypeScript module"
       ],
       "depends_on": ["3"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "9",
@@ -135,7 +135,7 @@
         "Nested definitions are still captured as symbols"
       ],
       "depends_on": ["3"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "10",
@@ -152,7 +152,7 @@
         "cx symbols --name 'zzz_no_match' exits with code 2"
       ],
       "depends_on": ["5", "6", "7", "8", "9"],
-      "status": "pending"
+      "status": "done"
     }
   ]
 }
