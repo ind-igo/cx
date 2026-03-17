@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use walkdir::WalkDir;
 
-use crate::language::detect_language;
+use crate::language::{detect_language, parse_and_extract};
 
 pub const INDEX_VERSION: u32 = 1;
 const INDEX_FILE: &str = ".cx-index";
@@ -179,8 +179,16 @@ impl Index {
                     read_cache: None,
                 },
             );
-            // exports will be populated by language modules in unit 3
-            self.exports.entry(rel_path).or_default();
+
+            // Parse and extract symbols
+            let symbols = match fs::read(path) {
+                Ok(source) => parse_and_extract(lang, &source),
+                Err(e) => {
+                    eprintln!("cx: warning: failed to read {}: {}", path.display(), e);
+                    Vec::new()
+                }
+            };
+            self.exports.insert(rel_path, symbols);
         }
     }
 
@@ -255,8 +263,13 @@ impl Index {
                             read_cache,
                         },
                     );
-                    // Clear exports for re-parse (unit 3 will populate)
-                    self.exports.insert(path.clone(), Vec::new());
+                    // Re-parse and extract symbols
+                    let abs_path = self.root.join(path);
+                    let symbols = match fs::read(&abs_path) {
+                        Ok(source) => parse_and_extract(*lang, &source),
+                        Err(_) => Vec::new(),
+                    };
+                    self.exports.insert(path.clone(), symbols);
                     changed = true;
                 }
             }
