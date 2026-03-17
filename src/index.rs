@@ -9,7 +9,9 @@ use crate::language::{detect_language, parse_and_extract};
 
 pub const INDEX_VERSION: u32 = 1;
 const INDEX_FILE: &str = ".cx-index";
-const INDEX_TMP: &str = ".cx-index.tmp";
+fn index_tmp() -> String {
+    format!(".cx-index.tmp.{}", std::process::id())
+}
 
 const SKIP_DIRS: &[&str] = &[
     "target",
@@ -283,7 +285,7 @@ impl Index {
     /// Atomically write the index to disk.
     pub fn save(&self) {
         let index_path = self.root.join(INDEX_FILE);
-        let tmp_path = self.root.join(INDEX_TMP);
+        let tmp_path = self.root.join(index_tmp());
 
         let data = match serde_json::to_vec(self) {
             Ok(d) => d,
