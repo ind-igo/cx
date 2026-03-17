@@ -88,16 +88,13 @@ fn main() {
 
     let exit_code = match cli.command {
         Commands::Overview { file } => {
-            let _index = index::Index::load_or_build(&root);
-            eprintln!("cx overview: not implemented yet");
-            let _ = file;
-            1
+            let idx = index::Index::load_or_build(&root);
+            query::symbols(&idx, Some(&file), None, None, true, cli.json)
         }
         Commands::Symbols { file, name, kind } => {
-            let _index = index::Index::load_or_build(&root);
-            eprintln!("cx symbols: not implemented yet");
-            let _ = (file, name, kind);
-            1
+            let idx = index::Index::load_or_build(&root);
+            let kind_filter = kind.as_deref().and_then(index::SymbolKind::from_str);
+            query::symbols(&idx, file.as_deref(), name.as_deref(), kind_filter, file.is_some(), cli.json)
         }
         Commands::Definition { name, from, max_lines } => {
             let _index = index::Index::load_or_build(&root);
