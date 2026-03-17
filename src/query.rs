@@ -73,6 +73,7 @@ pub fn symbols(
     file: Option<&Path>,
     name_glob: Option<&str>,
     kind_filter: Option<SymbolKind>,
+    exported_only: bool,
     single_file: bool,
     json: bool,
 ) -> i32 {
@@ -107,6 +108,10 @@ pub fn symbols(
                 if sym.kind != kind {
                     continue;
                 }
+            }
+
+            if exported_only && !sym.is_exported {
+                continue;
             }
 
             rows.push(SymbolRow {

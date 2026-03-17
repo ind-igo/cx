@@ -42,6 +42,9 @@ enum Commands {
         /// Filter by symbol kind (fn, struct, enum, trait, type, const, class, interface, method, module)
         #[arg(long)]
         kind: Option<String>,
+        /// Only show exported/public symbols
+        #[arg(long)]
+        exported: bool,
     },
     /// Get a function/type body without reading the whole file
     Definition {
@@ -82,12 +85,12 @@ fn main() {
     let exit_code = match cli.command {
         Commands::Overview { file } => {
             let idx = index::Index::load_or_build(&root);
-            query::symbols(&idx, Some(&file), None, None, true, cli.json)
+            query::symbols(&idx, Some(&file), None, None, false, true, cli.json)
         }
-        Commands::Symbols { file, name, kind } => {
+        Commands::Symbols { file, name, kind, exported } => {
             let idx = index::Index::load_or_build(&root);
             let kind_filter = kind.as_deref().and_then(index::SymbolKind::from_str);
-            query::symbols(&idx, file.as_deref(), name.as_deref(), kind_filter, file.is_some(), cli.json)
+            query::symbols(&idx, file.as_deref(), name.as_deref(), kind_filter, exported, file.is_some(), cli.json)
         }
         Commands::Definition { name, from, max_lines } => {
             let idx = index::Index::load_or_build(&root);
