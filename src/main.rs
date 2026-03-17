@@ -101,10 +101,8 @@ fn main() {
             query::definition(&idx, &name, from.as_deref(), max_lines, cli.json)
         }
         Commands::Read { file, fresh } => {
-            let _index = index::Index::load_or_build(&root);
-            eprintln!("cx read: not implemented yet");
-            let _ = (file, fresh);
-            1
+            let mut idx = index::Index::load_or_build(&root);
+            query::read(&mut idx, &file, fresh, cli.json)
         }
         Commands::Grep { args } => {
             grep::run(&args)

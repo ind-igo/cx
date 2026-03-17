@@ -1,7 +1,9 @@
+use std::collections::hash_map::DefaultHasher;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
-use crate::index::{Index, Symbol, SymbolKind};
+use crate::index::{Index, ReadCache, Symbol, SymbolKind};
 use crate::output::{toon_table, toon_scalar};
 use crate::util::glob::glob_match;
 
@@ -273,6 +275,149 @@ fn print_definitions_json(matches: &[(&PathBuf, &Symbol)], root: &Path, max_line
     } else {
         println!("{}", serde_json::to_string_pretty(&json_results).unwrap_or_default());
     }
+}
+
+/// Execute the read command with session-scoped cache.
+pub fn read(index: &mut Index, file: &Path, fresh: bool, json: bool) -> i32 {
+    let rel = make_relative(file, &index.root);
+    let abs = index.root.join(&rel);
+
+    // Read current file content
+    let content = match fs::read(&abs) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("cx: cannot read {}: {}", file.display(), e);
+            return 1;
+        }
+    };
+
+    let content_hash = hash_bytes(&content);
+    let content_str = String::from_utf8_lossy(&content);
+
+    if fresh {
+        // Always return full content, update cache
+        update_cache(index, &rel, content_hash);
+        print_read_content(&rel, &content_str, json);
+        return 0;
+    }
+
+    let session_id = get_session_id();
+
+    // Check cache
+    if let Some(entry) = index.files.get(&rel) {
+        if let Some(ref cache) = entry.read_cache {
+            if cache.session_id == session_id {
+                // Cache hit — check if content changed
+                if cache.content_hash == content_hash {
+                    // Unchanged
+                    let hash_hex = format!("{:08x}", content_hash);
+                    if json {
+                        let obj = serde_json::json!({
+                            "status": "unchanged",
+                            "file": rel.display().to_string(),
+                            "hash": hash_hex,
+                        });
+                        println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
+                    } else {
+                        print!(
+                            "{}",
+                            toon_scalar(&[
+                                ("status", "unchanged"),
+                                ("file", &rel.display().to_string()),
+                                ("hash", &hash_hex),
+                            ])
+                        );
+                    }
+                    return 0;
+                } else {
+                    // Changed — return full new content
+                    update_cache(index, &rel, content_hash);
+                    if json {
+                        let obj = serde_json::json!({
+                            "status": "changed",
+                            "file": rel.display().to_string(),
+                            "content": content_str,
+                        });
+                        println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
+                    } else {
+                        print!(
+                            "{}",
+                            toon_scalar(&[
+                                ("status", "changed"),
+                                ("file", &rel.display().to_string()),
+                            ])
+                        );
+                        println!("{}", content_str);
+                    }
+                    return 0;
+                }
+            }
+        }
+    }
+
+    // Cache miss — first read in session
+    update_cache_with_session(index, &rel, content_hash, &session_id);
+    print_read_content(&rel, &content_str, json);
+    0
+}
+
+fn print_read_content(rel: &Path, content: &str, json: bool) {
+    if json {
+        let obj = serde_json::json!({
+            "file": rel.display().to_string(),
+            "content": content,
+        });
+        println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
+    } else {
+        println!("{}", content);
+    }
+}
+
+fn update_cache(index: &mut Index, rel: &Path, content_hash: u64) {
+    let session_id = get_session_id();
+    update_cache_with_session(index, rel, content_hash, &session_id);
+}
+
+fn update_cache_with_session(index: &mut Index, rel: &Path, content_hash: u64, session_id: &str) {
+    if let Some(entry) = index.files.get_mut(rel) {
+        entry.read_cache = Some(ReadCache {
+            session_id: session_id.to_string(),
+            content_hash,
+        });
+    }
+    index.save();
+}
+
+fn hash_bytes(data: &[u8]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    data.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// Get or create session ID based on parent PID.
+fn get_session_id() -> String {
+    let ppid = std::os::unix::process::parent_id();
+    let session_file = PathBuf::from(format!("/tmp/cx-session-{}", ppid));
+
+    if let Ok(id) = fs::read_to_string(&session_file) {
+        let trimmed = id.trim().to_string();
+        if !trimmed.is_empty() {
+            return trimmed;
+        }
+    }
+
+    // Generate new session ID
+    let id = format!(
+        "{:016x}{:016x}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64,
+        std::process::id() as u64
+    );
+
+    let _ = fs::write(&session_file, &id);
+    id
 }
 
 /// Make a path relative to the project root if it's absolute,
