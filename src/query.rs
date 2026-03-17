@@ -330,10 +330,22 @@ fn hash_bytes(data: &[u8]) -> u64 {
     hasher.finish()
 }
 
+/// Get the parent process ID, falling back to own PID on non-unix.
+fn parent_pid() -> u32 {
+    #[cfg(unix)]
+    { std::os::unix::process::parent_id() }
+    #[cfg(not(unix))]
+    { std::process::id() }
+}
+
 /// Get or create session ID based on parent PID.
+/// Session file is scoped to user + PPID to avoid collisions.
 fn get_session_id() -> String {
-    let ppid = std::os::unix::process::parent_id();
-    let session_file = PathBuf::from(format!("/tmp/cx-session-{}", ppid));
+    let ppid = parent_pid();
+    let user = std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_else(|_| format!("u{}", std::process::id()));
+    let session_file = PathBuf::from(format!("/tmp/cx-session-{}-{}", user, ppid));
 
     if let Ok(id) = fs::read_to_string(&session_file) {
         let trimmed = id.trim().to_string();
