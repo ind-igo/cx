@@ -4,11 +4,13 @@ Semantic code navigation for AI agents. Replaces expensive file reads with targe
 
 ## Why
 
-Agents spend ~74% of their context budget reading files. Most of those reads are wasteful:
+In our usage, agents spend ~74% of their context budget reading files. Most of those reads are wasteful:
 
-- **62% aren't followed by edits** -- the agent just needs to know what's in a file
-- **46% are chain reads** -- reading A to find B to find C, averaging 3.5 files deep
-- **32.5% are re-reads** -- same file read multiple times per session
+- **~62% aren't followed by edits** -- the agent just needs to know what's in a file
+- **~46% are chain reads** -- reading A to find B to find C, averaging 3.5 files deep
+- **~33% are re-reads** -- same file read multiple times per session
+
+These numbers are from our own analysis of agent sessions, not published benchmarks. Your mileage may vary, but the pattern is consistent: agents read far more than they need to.
 
 cx gives agents a cost ladder. Start cheap, escalate only when needed:
 
