@@ -33,7 +33,8 @@ pub fn parse_and_extract(lang: Language, source: &[u8], path: &Path) -> Vec<Symb
                 _ => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
             }
         }
-        Language::Python | Language::Unknown => {
+        Language::Python => tree_sitter_python::LANGUAGE.into(),
+        Language::Unknown => {
             return Vec::new();
         }
     };
@@ -51,6 +52,7 @@ pub fn parse_and_extract(lang: Language, source: &[u8], path: &Path) -> Vec<Symb
     let module: Box<dyn LanguageModule> = match lang {
         Language::Rust => Box::new(rust::RustModule),
         Language::TypeScript => Box::new(typescript::TypeScriptModule),
+        Language::Python => Box::new(python::PythonModule),
         _ => return Vec::new(),
     };
 
