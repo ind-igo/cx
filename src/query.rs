@@ -338,14 +338,38 @@ fn parent_pid() -> u32 {
     { std::process::id() }
 }
 
-/// Get or create session ID based on parent PID.
-/// Session file is scoped to user + PPID to avoid collisions.
+/// Get the TTY device name for the current process, if any.
+fn tty_suffix() -> String {
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd;
+        let fd = std::io::stdin().as_raw_fd();
+        // SAFETY: ttyname_r would be safer but libc::ttyname is fine for a short-lived read
+        let ptr = unsafe { libc::ttyname(fd) };
+        if !ptr.is_null() {
+            if let Ok(s) = unsafe { std::ffi::CStr::from_ptr(ptr) }.to_str() {
+                // Sanitize path: /dev/ttys003 -> ttys003
+                return s.trim_start_matches("/dev/").replace('/', "-");
+            }
+        }
+    }
+    String::new()
+}
+
+/// Get or create session ID based on parent PID + TTY.
+/// TTY distinguishes agents in different terminals sharing a parent process.
+/// Falls back to PPID-only when no TTY is available (pipes, CI).
 fn get_session_id() -> String {
     let ppid = parent_pid();
     let user = std::env::var("USER")
         .or_else(|_| std::env::var("USERNAME"))
         .unwrap_or_else(|_| format!("u{}", std::process::id()));
-    let session_file = PathBuf::from(format!("/tmp/cx-session-{}-{}", user, ppid));
+    let tty = tty_suffix();
+    let session_file = if tty.is_empty() {
+        PathBuf::from(format!("/tmp/cx-session-{}-{}", user, ppid))
+    } else {
+        PathBuf::from(format!("/tmp/cx-session-{}-{}-{}", user, ppid, tty))
+    };
 
     if let Ok(id) = fs::read_to_string(&session_file) {
         let trimmed = id.trim().to_string();

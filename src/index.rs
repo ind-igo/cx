@@ -1,26 +1,17 @@
+use ignore::WalkBuilder;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-use walkdir::WalkDir;
 
 use crate::language::{detect_language, parse_and_extract};
 
-pub const INDEX_VERSION: u32 = 2;
+pub const INDEX_VERSION: u32 = 1;
 const INDEX_FILE: &str = ".cx-index";
 fn index_tmp() -> String {
     format!(".cx-index.tmp.{}", std::process::id())
 }
-
-const SKIP_DIRS: &[&str] = &[
-    "target",
-    "node_modules",
-    ".git",
-    "dist",
-    "__pycache__",
-    ".cx-index",
-];
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Index {
@@ -155,19 +146,9 @@ impl Index {
     }
 
     /// Crawl from project root, collecting all supported files.
+    /// Respects .gitignore and always skips the index file.
     fn full_crawl(&mut self) {
-        let walker = WalkDir::new(&self.root).into_iter();
-
-        for entry in walker.filter_entry(|e| !should_skip(e)) {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-
-            if !entry.file_type().is_file() {
-                continue;
-            }
-
+        for entry in walk(&self.root) {
             let path = entry.path();
             let Some(lang) = detect_language(path) else {
                 continue;
@@ -210,17 +191,7 @@ impl Index {
         // Collect current files on disk
         let mut on_disk: HashMap<PathBuf, (SystemTime, Language)> = HashMap::new();
 
-        let walker = WalkDir::new(&self.root).into_iter();
-        for entry in walker.filter_entry(|e| !should_skip(e)) {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-
-            if !entry.file_type().is_file() {
-                continue;
-            }
-
+        for entry in walk(&self.root) {
             let path = entry.path();
             let Some(lang) = detect_language(path) else {
                 continue;
@@ -316,24 +287,30 @@ impl Index {
     }
 }
 
-fn should_skip(entry: &walkdir::DirEntry) -> bool {
-    if !entry.file_type().is_dir() {
-        return false;
-    }
-
-    let name = entry.file_name().to_str().unwrap_or("");
-
-    // Skip known directories
-    if SKIP_DIRS.contains(&name) {
-        return true;
-    }
-
-    // Skip directories containing .cx-ignore
-    if entry.path().join(".cx-ignore").exists() {
-        return true;
-    }
-
-    false
+/// Walk the project tree, respecting .gitignore and skipping the index file.
+fn walk(root: &Path) -> impl Iterator<Item = ignore::DirEntry> {
+    WalkBuilder::new(root)
+        .hidden(false)       // don't skip dotfiles — gitignore handles what to skip
+        .git_ignore(true)    // respect .gitignore
+        .git_global(true)    // respect global gitignore
+        .git_exclude(true)   // respect .git/info/exclude
+        .filter_entry(|e| {
+            let name = e.file_name().to_str().unwrap_or("");
+            // Always skip .git, the index file, and .cx-ignore sentinel dirs
+            if name == ".git" || name == INDEX_FILE {
+                return false;
+            }
+            if name.starts_with(".cx-index.tmp") {
+                return false;
+            }
+            if e.file_type().map_or(false, |ft| ft.is_dir()) && e.path().join(".cx-ignore").exists() {
+                return false;
+            }
+            true
+        })
+        .build()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().map_or(false, |ft| ft.is_file()))
 }
 
 mod system_time_serde {
@@ -402,16 +379,10 @@ mod tests {
     }
 
     #[test]
-    fn test_should_skip() {
-        use walkdir::WalkDir;
+    fn test_walk_respects_gitignore() {
         let cwd = env::current_dir().unwrap();
 
-        // Walk and verify .git is skipped
-        let entries: Vec<_> = WalkDir::new(&cwd)
-            .into_iter()
-            .filter_entry(|e| !should_skip(e))
-            .filter_map(|e| e.ok())
-            .collect();
+        let entries: Vec<_> = walk(&cwd).collect();
 
         for entry in &entries {
             let path = entry.path();

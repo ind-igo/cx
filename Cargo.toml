@@ -1,7 +1,16 @@
 [package]
-name = "cx"
+name = "cx-cli"
 version = "0.1.0"
 edition = "2024"
+description = "Semantic code navigation for AI agents"
+license = "MIT"
+repository = "https://github.com/ind-igo/cx"
+keywords = ["code-navigation", "tree-sitter", "symbols", "ai-agents"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "cx"
+path = "src/main.rs"
 
 [dependencies]
 tree-sitter = "0.25"
@@ -12,7 +21,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
 toon-format = "0.4"
-walkdir = "2"
 tree-sitter-cpp = "0.23"
 tree-sitter-java = "0.23"
 tree-sitter-ruby = "0.23"
@@ -24,6 +32,10 @@ tree-sitter-lua = "0.5.0"
 tree-sitter-zig = "1.1.2"
 tree-sitter-solidity = "1.2.13"
 tree-sitter-elixir = "0.3.5"
+ignore = "0.4.25"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"
