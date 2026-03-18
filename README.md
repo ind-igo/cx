@@ -25,7 +25,7 @@ Benchmarked on real agent workflows, cx reduces token consumption by **15-80%** 
 ## Install
 
 ```
-cargo install --path .
+cargo install cx-cli
 ```
 
 ## Usage
@@ -95,6 +95,57 @@ On first invocation, cx builds an index (`.cx-index`) by parsing all source file
 ## Output format
 
 Default output is [TOON](https://toonformat.dev) -- a token-efficient structured format. Use `--json` for JSON.
+
+## Adding a language
+
+cx uses tree-sitter grammars. To add a new language:
+
+1. Add the tree-sitter grammar crate to `Cargo.toml`
+2. In `src/language/mod.rs`, add:
+   - A grammar function (e.g., `fn swift_grammar(_ext: &str) -> tree_sitter::Language`)
+   - A query constant with tree-sitter patterns for the language's symbols
+   - A query function returning the constant
+   - A `LanguageConfig` entry in the `LANGUAGES` array
+3. Add the language variant to `Language` enum in `src/index.rs`
+4. Add tests
+
+Here's a minimal example — adding Swift support:
+
+```rust
+// Grammar function
+fn swift_grammar(_ext: &str) -> tree_sitter::Language {
+    tree_sitter_swift::LANGUAGE.into()
+}
+
+// Query — capture the patterns you care about
+const SWIFT_QUERY: &str = r#"
+(function_declaration
+  name: (simple_identifier) @name) @definition.function
+
+(class_declaration
+  name: (type_identifier) @name) @definition.class
+
+(protocol_declaration
+  name: (type_identifier) @name) @definition.interface
+"#;
+
+fn swift_query() -> &'static str { SWIFT_QUERY }
+
+// Registry entry
+LanguageConfig {
+    language: Language::Swift,
+    extensions: &["swift"],
+    grammar: swift_grammar,
+    query: swift_query,
+    sig_body_child: None,
+    sig_delimiter: Some(b'{'),
+    kind_overrides: &[],
+},
+```
+
+**Writing queries:** Use `tree-sitter parse` or inspect `node-types.json` in the grammar crate to discover the AST structure. Capture `@name` for the symbol name and `@definition.<kind>` for the enclosing node. Supported kinds: `function`, `method`, `class`, `interface`, `type`, `enum`, `module`, `constant`, `event`, `macro`.
+
+**Kind overrides:** When a language maps generic capture names to specific concepts (e.g., Rust's `definition.class` → `SymbolKind::Struct`), add entries to `kind_overrides`. These are checked before the default mapping.
 
 ## Agent integration
 
