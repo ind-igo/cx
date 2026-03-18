@@ -104,27 +104,6 @@ fn json_definition_always_array() {
     assert_eq!(parsed.as_array().unwrap().len(), 1);
 }
 
-// --- Exported filter tests ---
-
-#[test]
-fn symbols_exported_filter() {
-    let dir = temp_project(&[
-        ("src/lib.rs", "pub fn public_one() {}\nfn private_one() {}\npub fn public_two() {}\n"),
-    ]);
-
-    // Without --exported: all 3 functions
-    let out = cx_in(dir.path()).args(["symbols", "--kind", "fn"]).output().unwrap();
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("private_one"), "should include private: {stdout}");
-
-    // With --exported: only pub functions
-    let out2 = cx_in(dir.path()).args(["symbols", "--kind", "fn", "--exported"]).output().unwrap();
-    let stdout2 = String::from_utf8_lossy(&out2.stdout);
-    assert!(stdout2.contains("public_one"), "should include public_one: {stdout2}");
-    assert!(stdout2.contains("public_two"), "should include public_two: {stdout2}");
-    assert!(!stdout2.contains("private_one"), "should exclude private: {stdout2}");
-}
-
 // --- Read session cache tests ---
 
 #[test]

@@ -7,7 +7,7 @@ use walkdir::WalkDir;
 
 use crate::language::{detect_language, parse_and_extract};
 
-pub const INDEX_VERSION: u32 = 1;
+pub const INDEX_VERSION: u32 = 2;
 const INDEX_FILE: &str = ".cx-index";
 fn index_tmp() -> String {
     format!(".cx-index.tmp.{}", std::process::id())
@@ -50,7 +50,6 @@ pub struct Symbol {
     pub kind: SymbolKind,
     pub signature: String,
     pub byte_range: (usize, usize),
-    pub is_exported: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,6 +65,7 @@ pub enum SymbolKind {
     Interface,
     Method,
     Module,
+    Event,
 }
 
 impl SymbolKind {
@@ -81,6 +81,7 @@ impl SymbolKind {
             "interface" => Some(Self::Interface),
             "method" => Some(Self::Method),
             "module" => Some(Self::Module),
+            "event" => Some(Self::Event),
             _ => None,
         }
     }
@@ -97,6 +98,7 @@ impl SymbolKind {
             Self::Interface => "interface",
             Self::Method => "method",
             Self::Module => "module",
+            Self::Event => "event",
         }
     }
 }
@@ -107,7 +109,17 @@ pub enum Language {
     Rust,
     TypeScript,
     Python,
-    Unknown,
+    Go,
+    C,
+    Cpp,
+    Java,
+    Ruby,
+    CSharp,
+    Lua,
+    Zig,
+    Bash,
+    Solidity,
+    Elixir,
 }
 
 impl Index {
@@ -157,10 +169,9 @@ impl Index {
             }
 
             let path = entry.path();
-            let lang = detect_language(path);
-            if lang == Language::Unknown {
+            let Some(lang) = detect_language(path) else {
                 continue;
-            }
+            };
 
             let rel_path = match path.strip_prefix(&self.root) {
                 Ok(p) => p.to_path_buf(),
@@ -211,10 +222,9 @@ impl Index {
             }
 
             let path = entry.path();
-            let lang = detect_language(path);
-            if lang == Language::Unknown {
+            let Some(lang) = detect_language(path) else {
                 continue;
-            }
+            };
 
             let rel_path = match path.strip_prefix(&self.root) {
                 Ok(p) => p.to_path_buf(),

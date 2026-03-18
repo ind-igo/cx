@@ -46,7 +46,7 @@ $ cx overview src/main.rs
 ### Symbols -- search across the project
 
 ```
-$ cx symbols --kind fn --exported
+$ cx symbols --kind fn
 
 [15]{file,name,kind,signature}:
   src/output.rs,print_toon,fn,"pub fn print_toon<T: Serialize>(value: &T)"
@@ -55,7 +55,9 @@ $ cx symbols --kind fn --exported
   ...
 ```
 
-Filters: `--kind`, `--name` (glob), `--file`, `--exported`
+Filters: `--kind`, `--name` (glob), `--file`
+
+Public/exported symbols are identifiable from their signatures (e.g. `pub fn` in Rust, `export function` in TypeScript).
 
 ### Definition -- get a function body without reading the file
 
@@ -82,9 +84,9 @@ Sessions are scoped to the parent process. A new terminal gets a fresh session.
 
 ## How it works
 
-On first invocation, cx builds an index (`.cx-index`) by parsing all source files with tree-sitter. The index stores symbols, signatures, byte ranges, and export status for every file. Subsequent invocations incrementally update only changed files.
+On first invocation, cx builds an index (`.cx-index`) by parsing all source files with tree-sitter. The index stores symbols, signatures, and byte ranges for every file. Subsequent invocations incrementally update only changed files.
 
-**Supported languages:** Rust, TypeScript/JavaScript, Python
+**Supported languages:** Rust, TypeScript/JavaScript, Python, Go, C, C++, Java, Ruby, C#, Lua, Zig, Bash, Solidity, Elixir
 
 **Index location:** `.cx-index` in the project root (add to `.gitignore`)
 
@@ -102,10 +104,14 @@ Add this to your agent's system prompt:
 cx -- semantic code index. Use instead of reading files where possible.
 
   cx overview PATH              file table of contents (~200 tokens)
-  cx symbols [--kind K] [--name GLOB] [--exported]
+  cx symbols [--kind K] [--name GLOB] [--file PATH]
                                 search symbols across project
   cx definition --name NAME     function/type body without full file read
   cx read PATH [--fresh]        full file with session cache
+
+Escalation hierarchy: overview → definition → read
+- Use `cx symbols --kind fn` then check signatures for `pub`/`export` to find public API
+- Use overview to find functions, definition to read bodies
+- Fall back to `cx read` only when you need the full file
 ```
 
-Exit codes: 0 success, 1 error, 2 no results.
