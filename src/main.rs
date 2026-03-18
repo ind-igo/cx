@@ -17,7 +17,7 @@ struct Cli {
 
     /// Project root (default: git root from cwd, then cwd)
     #[arg(long, global = true)]
-    project: Option<PathBuf>,
+    root: Option<PathBuf>,
 
     /// Emit JSON instead of TOON
     #[arg(long, global = true)]
@@ -77,7 +77,7 @@ fn resolve_root(project: Option<PathBuf>) -> PathBuf {
 
 fn main() {
     let cli = Cli::parse();
-    let root = resolve_root(cli.project);
+    let root = resolve_root(cli.root);
 
     let exit_code = match cli.command {
         Commands::Overview { file } => {

@@ -91,7 +91,9 @@ On first invocation, cx builds an index (`.cx-index`) by parsing all source file
 
 **Index location:** `.cx-index` in the project root (add to `.gitignore`)
 
-**Project root detection:** walks up from cwd looking for `.git`
+**Project root detection:** walks up from cwd looking for `.git`. Override with `--root /path/to/project`.
+
+**File filtering:** cx respects your `.gitignore`. To exclude additional directories from indexing, drop an empty `.cx-ignore` file inside them.
 
 ## Output format
 
