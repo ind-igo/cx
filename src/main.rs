@@ -27,11 +27,13 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// File table of contents — all symbols + signatures
+    #[command(alias = "o")]
     Overview {
         /// File to summarize
         file: PathBuf,
     },
     /// Search symbols across project
+    #[command(alias = "s")]
     Symbols {
         /// Filter to a specific file
         #[arg(long)]
@@ -44,6 +46,7 @@ enum Commands {
         kind: Option<String>,
     },
     /// Get a function/type body without reading the whole file
+    #[command(alias = "d")]
     Definition {
         /// Symbol name to look up
         #[arg(long)]
@@ -56,6 +59,7 @@ enum Commands {
         max_lines: usize,
     },
     /// Full file read with session cache
+    #[command(alias = "r")]
     Read {
         /// File to read
         file: PathBuf,
