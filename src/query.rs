@@ -81,12 +81,11 @@ pub fn symbols(
     // Resolve file filter path up front so it lives long enough
     let rel_path = file.map(|f| make_relative(f, &index.root));
 
-    if let Some(ref rel) = rel_path {
-        if !index.exports.contains_key(rel) {
+    if let Some(ref rel) = rel_path
+        && !index.exports.contains_key(rel) {
             eprintln!("cx: file not in index: {}", rel.display());
             return 1;
         }
-    }
 
     let files_to_search: Vec<(&PathBuf, &Vec<Symbol>)> = match rel_path {
         Some(ref rel) => {
@@ -97,17 +96,15 @@ pub fn symbols(
 
     for (path, syms) in files_to_search {
         for sym in syms {
-            if let Some(pattern) = name_glob {
-                if !glob_match(pattern, &sym.name) {
+            if let Some(pattern) = name_glob
+                && !glob_match(pattern, &sym.name) {
                     continue;
                 }
-            }
 
-            if let Some(kind) = kind_filter {
-                if sym.kind != kind {
+            if let Some(kind) = kind_filter
+                && sym.kind != kind {
                     continue;
                 }
-            }
 
             rows.push(SymbolRow {
                 file: path.clone(),
@@ -258,9 +255,9 @@ pub fn read(index: &mut Index, file: &Path, fresh: bool, json: bool) -> i32 {
     let session_id = get_session_id();
 
     // Check cache
-    if let Some(entry) = index.files.get(&rel) {
-        if let Some(ref cache) = entry.read_cache {
-            if cache.session_id == session_id {
+    if let Some(entry) = index.files.get(&rel)
+        && let Some(ref cache) = entry.read_cache
+            && cache.session_id == session_id {
                 if cache.content_hash == content_hash {
                     // Unchanged
                     let out = ReadUnchanged {
@@ -289,8 +286,6 @@ pub fn read(index: &mut Index, file: &Path, fresh: bool, json: bool) -> i32 {
                     return 0;
                 }
             }
-        }
-    }
 
     // Cache miss — first read in session
     update_cache_with_session(index, &rel, content_hash, &session_id);
@@ -346,12 +341,11 @@ fn tty_suffix() -> String {
         let fd = std::io::stdin().as_raw_fd();
         // SAFETY: ttyname_r would be safer but libc::ttyname is fine for a short-lived read
         let ptr = unsafe { libc::ttyname(fd) };
-        if !ptr.is_null() {
-            if let Ok(s) = unsafe { std::ffi::CStr::from_ptr(ptr) }.to_str() {
+        if !ptr.is_null()
+            && let Ok(s) = unsafe { std::ffi::CStr::from_ptr(ptr) }.to_str() {
                 // Sanitize path: /dev/ttys003 -> ttys003
                 return s.trim_start_matches("/dev/").replace('/', "-");
             }
-        }
     }
     String::new()
 }

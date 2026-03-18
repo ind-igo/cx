@@ -129,15 +129,13 @@ impl Index {
         let index_path = root.join(INDEX_FILE);
 
         // Try loading existing index
-        if let Ok(data) = fs::read(&index_path) {
-            if let Ok(mut index) = serde_json::from_slice::<Index>(&data) {
-                if index.version == INDEX_VERSION && index.root == root {
+        if let Ok(data) = fs::read(&index_path)
+            && let Ok(mut index) = serde_json::from_slice::<Index>(&data)
+                && index.version == INDEX_VERSION && index.root == root {
                     index.incremental_update();
                     return index;
                 }
-            }
             // Version mismatch or corrupt — rebuild
-        }
 
         let mut index = Index::new(root.to_path_buf());
         index.full_crawl();
@@ -303,14 +301,14 @@ fn walk(root: &Path) -> impl Iterator<Item = ignore::DirEntry> {
             if name.starts_with(".cx-index.tmp") {
                 return false;
             }
-            if e.file_type().map_or(false, |ft| ft.is_dir()) && e.path().join(".cx-ignore").exists() {
+            if e.file_type().is_some_and(|ft| ft.is_dir()) && e.path().join(".cx-ignore").exists() {
                 return false;
             }
             true
         })
         .build()
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().map_or(false, |ft| ft.is_file()))
+        .filter(|e| e.file_type().is_some_and(|ft| ft.is_file()))
 }
 
 mod system_time_serde {

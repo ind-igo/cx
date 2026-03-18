@@ -487,7 +487,7 @@ fn extract_symbols(
     source: &[u8],
 ) -> Vec<Symbol> {
     let mut cursor = QueryCursor::new();
-    let mut matches = cursor.matches(&query, tree.root_node(), source);
+    let mut matches = cursor.matches(query, tree.root_node(), source);
     let capture_names = query.capture_names();
 
     let mut symbols = Vec::new();
@@ -498,7 +498,7 @@ fn extract_symbols(
         let mut def_kind: Option<&str> = None;
 
         for capture in m.captures {
-            let cname = &*capture_names[capture.index as usize];
+            let cname = capture_names[capture.index as usize];
             if cname == "name" {
                 name_node = Some(capture.node);
             } else if cname.starts_with("definition.") {
@@ -592,14 +592,13 @@ fn build_signature(config: &LanguageConfig, node: Node, source: &[u8]) -> String
     }
 
     // Strategy 2: scan for delimiter byte
-    if let Some(delim) = config.sig_delimiter {
-        if let Some(pos) = text.iter().position(|&b| b == delim) {
+    if let Some(delim) = config.sig_delimiter
+        && let Some(pos) = text.iter().position(|&b| b == delim) {
             let sig = String::from_utf8_lossy(&text[..pos]).trim().to_string();
             if !sig.is_empty() {
                 return sig;
             }
         }
-    }
 
     // Strategy 3: for arrow functions, truncate at =>
     if let Some(pos) = text.windows(2).position(|w| w == b"=>") {
