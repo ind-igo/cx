@@ -17,7 +17,7 @@ cx gives agents a cost ladder. Start cheap, escalate only when needed:
 ```
 cx overview src/fees.rs       ~200 tokens   "what's in this file?"
 cx definition --name calc     ~500 tokens   "show me this function"
-cx read src/fees.rs           full file     "I need everything"
+cx read src/fees.rs           full file     "I need everything" (cached across calls)
 ```
 
 Benchmarked on real agent workflows, cx reduces token consumption by **15-80%** depending on the task, with the biggest savings on targeted lookups and re-reads.
@@ -72,15 +72,16 @@ body: ...
 
 Use `--from src/foo.rs` to disambiguate when multiple files define the same name. `--max-lines` (default 200) truncates large bodies.
 
-### Read -- full file with session cache
+### Read -- cached file read
 
 ```
-$ cx read src/main.rs          # first call: returns full content
-$ cx read src/main.rs          # second call: "status: unchanged" (~20 tokens)
-$ cx read src/main.rs --fresh  # bypass cache, always full content
+$ cx read src/main.rs          # returns full content, caches hash
+$ cx read src/main.rs          # file unchanged: "status: unchanged" (~20 tokens)
+                               # file changed: returns full new content
+$ cx read src/main.rs --fresh  # skip cache, always return full content
 ```
 
-Sessions are scoped to the parent process. A new terminal gets a fresh session.
+Sessions are scoped to the parent process and terminal. A new terminal gets a fresh session.
 
 ## How it works
 
