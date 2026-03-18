@@ -78,8 +78,10 @@ Use `--from src/foo.rs` to disambiguate when multiple files define the same name
 $ cx read src/main.rs          # returns full content, caches hash
 $ cx read src/main.rs          # file unchanged: "status: unchanged" (~20 tokens)
                                # file changed: returns full new content
-$ cx read src/main.rs --fresh  # skip cache, always return full content
+$ cx read src/main.rs --fresh  # force full re-read, bypass cache
 ```
+
+cx automatically detects edits via content hash — modified files return new content without needing `--fresh`. Use `--fresh` to skip the cache check entirely.
 
 Sessions are scoped to the parent process and terminal. A new terminal gets a fresh session.
 

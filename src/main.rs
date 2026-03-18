@@ -63,6 +63,8 @@ enum Commands {
         #[arg(long)]
         fresh: bool,
     },
+    /// Print the agent skill file to stdout
+    Skill,
 }
 
 fn resolve_root(project: Option<PathBuf>) -> PathBuf {
@@ -96,6 +98,10 @@ fn main() {
         Commands::Read { file, fresh } => {
             let mut idx = index::Index::load_or_build(&root);
             query::read(&mut idx, &file, fresh, cli.json)
+        }
+        Commands::Skill => {
+            print!("{}", include_str!("skill.md"));
+            0
         }
     };
 
