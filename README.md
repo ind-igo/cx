@@ -2,6 +2,8 @@
 
 Semantic code navigation for AI agents. Replaces expensive file reads with targeted structural queries.
 
+> **Alpha software.** This is a work in progress — expect breaking changes. Built with AI assistance (Claude).
+
 ## Why
 
 In our usage, agents spend ~74% of their context budget reading files. Most of those reads are wasteful:
