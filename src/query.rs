@@ -230,7 +230,7 @@ fn read_body(root: &Path, file: &Path, byte_range: (usize, usize)) -> Option<Str
 }
 
 /// Execute the read command with session-scoped cache.
-pub fn read(index: &mut Index, file: &Path, fresh: bool, json: bool) -> i32 {
+pub fn read(index: &mut Index, file: &Path, fresh: bool, json: bool, session: Option<&str>) -> i32 {
     let rel = make_relative(file, &index.root);
     let abs = index.root.join(&rel);
 
@@ -252,7 +252,7 @@ pub fn read(index: &mut Index, file: &Path, fresh: bool, json: bool) -> i32 {
         return 0;
     }
 
-    let session_id = get_session_id();
+    let session_id = session.map(|s| s.to_string()).unwrap_or_else(get_session_id);
 
     // Check cache
     if let Some(entry) = index.files.get(&rel)

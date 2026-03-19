@@ -22,6 +22,10 @@ struct Cli {
     /// Emit JSON instead of TOON
     #[arg(long, global = true)]
     json: bool,
+
+    /// Session ID for read cache (default: auto-derived from parent PID + TTY)
+    #[arg(long, global = true)]
+    session: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -101,7 +105,7 @@ fn main() {
         }
         Commands::Read { file, fresh } => {
             let mut idx = index::Index::load_or_build(&root);
-            query::read(&mut idx, &file, fresh, cli.json)
+            query::read(&mut idx, &file, fresh, cli.json, cli.session.as_deref())
         }
         Commands::Skill => {
             print!("{}", include_str!("skill.md"));

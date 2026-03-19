@@ -24,3 +24,7 @@ Short aliases: `cx o`, `cx s`, `cx d`, `cx r`
 Symbol kinds: fn, method, struct, enum, trait, type, const, class, interface, module, event
 
 Check signatures for `pub`/`export` to identify public API without reading the file.
+
+## Session caching
+
+Pass `--session <ID>` to enable read caching across separate shell invocations. Use a consistent ID (e.g., conversation ID) for all cx calls in a session. Second reads of unchanged files return "unchanged" (~20 tokens instead of the full file).
