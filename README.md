@@ -156,20 +156,16 @@ LanguageConfig {
 
 ## Agent integration
 
-Add this to your agent's system prompt:
+Generate the agent prompt and add it to your CLAUDE.md (or equivalent):
 
+```bash
+# Claude Code — import file
+cx skill > ~/.claude/CX.md
+# then add @CX.md to ~/.claude/CLAUDE.md
+
+# Or append directly
+cx skill >> ~/.claude/CLAUDE.md
 ```
-cx -- semantic code index. Use instead of reading files where possible.
 
-  cx overview PATH              file table of contents (~200 tokens)
-  cx symbols [--kind K] [--name GLOB] [--file PATH]
-                                search symbols across project
-  cx definition --name NAME     function/type body without full file read
-  cx read PATH [--fresh]        full file with session cache
-
-Escalation hierarchy: overview → definition → read
-- Use `cx symbols --kind fn` then check signatures for `pub`/`export` to find public API
-- Use overview to find functions, definition to read bodies
-- Fall back to `cx read` only when you need the full file
-```
+The prompt teaches the agent to prefer cx over raw file reads and includes the command reference.
 
