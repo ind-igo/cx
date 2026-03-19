@@ -1,66 +1,26 @@
-# cx — semantic code navigation
+# cx — Semantic Code Navigation
 
-Use `cx` instead of reading files when you need to understand code structure. It indexes the codebase with tree-sitter and returns symbols, signatures, and definitions at a fraction of the token cost.
+When `cx` is available in the project, prefer it over reading files directly.
 
-## When to use
+## Escalation hierarchy: overview → definition → read
 
-- Finding what's in a file → `cx overview`
-- Searching for symbols across the project → `cx symbols`
-- Reading a specific function or type body → `cx definition`
-- Reading a full file (with caching) → `cx read`
+- **Understand a file's structure** → `cx overview <file>` (~200 tokens)
+- **Find symbols across the project** → `cx symbols [--kind K] [--name GLOB] [--file PATH]`
+- **Read a specific function/type** → `cx definition --name <name>` (~500 tokens)
+- **Read the full file** → `cx read <file>` (cached — returns "unchanged" if unmodified)
+- **Fall back to Read tool** only when cx is not available or you need line-number precision
 
-Prefer cx over raw file reads. Escalate only when needed: **overview → definition → read**.
-
-## Commands
+## Quick reference
 
 ```
-cx overview PATH                       File table of contents — all symbols + signatures (~200 tokens)
-cx symbols [--kind K] [--name GLOB] [--file PATH]
-                                       Search symbols across the project
-cx definition --name NAME [--from PATH] [--max-lines N]
-                                       Get a function/type body without reading the whole file
-cx read PATH                           Full file with session cache (returns "unchanged" if unmodified)
-cx read PATH --fresh                   Always return full content, skip cache check
+cx overview PATH                        file table of contents
+cx symbols [--kind K] [--name GLOB]     search symbols project-wide
+cx definition --name NAME [--from PATH] get a function/type body
+cx read PATH [--fresh]                  full file, cached across calls
 ```
 
-### Symbol kinds
+Short aliases: `cx o`, `cx s`, `cx d`, `cx r`
 
-`fn`, `method`, `struct`, `enum`, `trait`, `type`, `const`, `class`, `interface`, `module`, `event`
+Symbol kinds: fn, method, struct, enum, trait, type, const, class, interface, module, event
 
-### Global flags
-
-- `--json` — emit JSON instead of TOON
-- `--root PATH` — override project root (default: git root)
-
-## Examples
-
-```bash
-# What's in this file?
-cx overview src/server.rs
-
-# Find all structs in the project
-cx symbols --kind struct
-
-# Find functions matching a pattern
-cx symbols --kind fn --name "handle_*"
-
-# Get a function body
-cx definition --name handle_request
-
-# Get a function body, disambiguate by file
-cx definition --name new --from src/config.rs
-
-# Read a file (cached — second call returns ~20 tokens if unchanged)
-cx read src/server.rs
-```
-
-## Tips
-
-- Check signatures for `pub`/`export` to identify public API without reading the file
-- Use `--name` glob patterns to narrow symbol search (e.g., `--name "*Error"`)
-- `cx read` caches per-session — repeated reads of unmodified files return "unchanged" (~20 tokens)
-- `cx read` automatically detects edits via content hash — no need for `--fresh` after changes
-
-## Supported languages
-
-Rust, TypeScript, JavaScript, Python, Go, C, C++, Java, Ruby, C#, Lua, Zig, Bash, Solidity, Elixir
+Check signatures for `pub`/`export` to identify public API without reading the file.
