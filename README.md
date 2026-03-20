@@ -4,6 +4,30 @@ Semantic code navigation for AI agents. Replaces expensive file reads with targe
 
 > **Alpha software.** This is a work in progress — expect breaking changes. Built with AI assistance (Claude).
 
+## Install
+
+```
+cargo install cx-cli
+```
+
+## Agent integration
+
+Generate the agent prompt and add it to your config:
+
+```bash
+# Claude Code — import file
+cx skill > ~/.claude/CX.md
+# then add @CX.md to ~/.claude/CLAUDE.md
+
+# Or append directly to any agent's system prompt
+cx skill >> ~/.claude/CLAUDE.md
+
+# Cursor
+cx skill >> .cursorrules
+```
+
+The prompt teaches the agent to prefer cx over raw file reads and includes the command reference.
+
 ## Why
 
 In our usage, agents spend ~74% of their context budget reading files. Most of those reads are wasteful:
@@ -23,12 +47,6 @@ cx read src/fees.rs           full file     "I need everything" (cached across c
 ```
 
 Benchmarked on real agent workflows, cx reduces token consumption by **15-80%** depending on the task, with the biggest savings on targeted lookups and re-reads.
-
-## Install
-
-```
-cargo install cx-cli
-```
 
 ## Usage
 
@@ -85,7 +103,7 @@ $ cx read src/main.rs --fresh  # force full re-read, bypass cache
 
 cx automatically detects edits via content hash — modified files return new content without needing `--fresh`. Use `--fresh` to skip the cache check entirely.
 
-Sessions are scoped to the parent process and terminal. A new terminal gets a fresh session.
+Pass `--session <ID>` to share the read cache across separate shell invocations (e.g., when each command runs in a new subprocess). Use a stable ID like a conversation or task ID.
 
 ## How it works
 
@@ -153,19 +171,3 @@ LanguageConfig {
 **Writing queries:** Use `tree-sitter parse` or inspect `node-types.json` in the grammar crate to discover the AST structure. Capture `@name` for the symbol name and `@definition.<kind>` for the enclosing node. Supported kinds: `function`, `method`, `class`, `interface`, `type`, `enum`, `module`, `constant`, `event`, `macro`.
 
 **Kind overrides:** When a language maps generic capture names to specific concepts (e.g., Rust's `definition.class` → `SymbolKind::Struct`), add entries to `kind_overrides`. These are checked before the default mapping.
-
-## Agent integration
-
-Generate the agent prompt and add it to your CLAUDE.md (or equivalent):
-
-```bash
-# Claude Code — import file
-cx skill > ~/.claude/CX.md
-# then add @CX.md to ~/.claude/CLAUDE.md
-
-# Or append directly
-cx skill >> ~/.claude/CLAUDE.md
-```
-
-The prompt teaches the agent to prefer cx over raw file reads and includes the command reference.
-
