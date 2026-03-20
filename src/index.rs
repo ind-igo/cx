@@ -140,6 +140,7 @@ impl Index {
         let mut index = Index::new(root.to_path_buf());
         index.full_crawl();
         index.save();
+        warn_if_not_gitignored(root);
         index
     }
 
@@ -282,6 +283,19 @@ impl Index {
         if let Err(e) = fs::rename(&tmp_path, &index_path) {
             eprintln!("cx: failed to rename index: {}", e);
         }
+    }
+}
+
+/// Warn once if .cx-index is not in .gitignore.
+fn warn_if_not_gitignored(root: &Path) {
+    use std::process::Command;
+    let ok = Command::new("git")
+        .args(["check-ignore", "-q", INDEX_FILE])
+        .current_dir(root)
+        .status()
+        .is_ok_and(|s| s.success());
+    if !ok {
+        eprintln!("cx: created .cx-index — consider adding it to .gitignore");
     }
 }
 
