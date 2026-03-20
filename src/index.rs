@@ -592,4 +592,193 @@ mod tests {
             assert!(!rel.starts_with("target/"), "found target file: {:?}", rel);
         }
     }
+
+    /// Helper: create a temp project with .git dir and source files, return (tempdir, Index).
+    fn build_temp_index(files: &[(&str, &str)]) -> (tempfile::TempDir, Index) {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join(".git")).unwrap();
+        for (path, content) in files {
+            let full = dir.path().join(path);
+            if let Some(parent) = full.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            fs::write(&full, content).unwrap();
+        }
+        let idx = Index::load_or_build(dir.path());
+        (dir, idx)
+    }
+
+    #[test]
+    fn test_load_or_build_fresh_db() {
+        let (dir, idx) = build_temp_index(&[
+            ("src/main.rs", "fn main() {}\n"),
+            ("src/lib.rs", "pub fn hello() {}\n"),
+        ]);
+
+        assert!(idx.files.contains_key(&PathBuf::from("src/main.rs")));
+        assert!(idx.files.contains_key(&PathBuf::from("src/lib.rs")));
+        assert_eq!(idx.exports.get(&PathBuf::from("src/main.rs")).unwrap().len(), 1);
+        assert_eq!(idx.exports.get(&PathBuf::from("src/lib.rs")).unwrap().len(), 1);
+
+        // DB file should exist
+        assert!(dir.path().join(DB_FILE).exists());
+    }
+
+    #[test]
+    fn test_load_or_build_reloads_from_existing_db() {
+        let (dir, idx) = build_temp_index(&[
+            ("src/main.rs", "fn main() {}\nfn helper() {}\n"),
+        ]);
+
+        let file_count = idx.files.len();
+        let sym_count = idx.exports.get(&PathBuf::from("src/main.rs")).unwrap().len();
+        assert!(sym_count >= 2, "should have at least 2 symbols: {sym_count}");
+
+        // Drop and reload — should get same data from redb
+        drop(idx);
+        let idx2 = Index::load_or_build(dir.path());
+        assert_eq!(idx2.files.len(), file_count);
+        assert_eq!(
+            idx2.exports.get(&PathBuf::from("src/main.rs")).unwrap().len(),
+            sym_count,
+        );
+    }
+
+    #[test]
+    fn test_save_all_clears_stale_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join(".git")).unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src/a.rs"), "fn a() {}\n").unwrap();
+        fs::write(dir.path().join("src/b.rs"), "fn b() {}\n").unwrap();
+
+        // Build index with both files
+        let idx = Index::load_or_build(dir.path());
+        assert!(idx.files.contains_key(&PathBuf::from("src/a.rs")));
+        assert!(idx.files.contains_key(&PathBuf::from("src/b.rs")));
+        drop(idx);
+
+        // Remove b.rs, rebuild
+        fs::remove_file(dir.path().join("src/b.rs")).unwrap();
+        let idx2 = Index::load_or_build(dir.path());
+        assert!(idx2.files.contains_key(&PathBuf::from("src/a.rs")));
+        assert!(!idx2.files.contains_key(&PathBuf::from("src/b.rs")));
+
+        // Reload again — b.rs should still be gone from redb
+        drop(idx2);
+        let idx3 = Index::load_or_build(dir.path());
+        assert!(!idx3.files.contains_key(&PathBuf::from("src/b.rs")));
+    }
+
+    #[test]
+    fn test_incremental_update_detects_new_file() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join(".git")).unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src/a.rs"), "fn a() {}\n").unwrap();
+
+        let idx = Index::load_or_build(dir.path());
+        assert_eq!(idx.files.len(), 1);
+        drop(idx);
+
+        // Add a new file
+        fs::write(dir.path().join("src/b.rs"), "fn b() {}\n").unwrap();
+
+        let idx2 = Index::load_or_build(dir.path());
+        assert_eq!(idx2.files.len(), 2);
+        assert!(idx2.files.contains_key(&PathBuf::from("src/b.rs")));
+        assert_eq!(idx2.exports.get(&PathBuf::from("src/b.rs")).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_incremental_update_detects_modified_file() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join(".git")).unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src/a.rs"), "fn a() {}\n").unwrap();
+
+        let idx = Index::load_or_build(dir.path());
+        assert_eq!(idx.exports.get(&PathBuf::from("src/a.rs")).unwrap().len(), 1);
+        drop(idx);
+
+        // Modify the file — add a second function
+        // Sleep briefly to ensure mtime changes
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        fs::write(dir.path().join("src/a.rs"), "fn a() {}\nfn b() {}\n").unwrap();
+
+        let idx2 = Index::load_or_build(dir.path());
+        assert_eq!(
+            idx2.exports.get(&PathBuf::from("src/a.rs")).unwrap().len(),
+            2,
+            "should detect modified file and re-parse symbols"
+        );
+    }
+
+    #[test]
+    fn test_incremental_update_detects_deleted_file() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join(".git")).unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src/a.rs"), "fn a() {}\n").unwrap();
+        fs::write(dir.path().join("src/b.rs"), "fn b() {}\n").unwrap();
+
+        let idx = Index::load_or_build(dir.path());
+        assert_eq!(idx.files.len(), 2);
+        drop(idx);
+
+        // Delete one file
+        fs::remove_file(dir.path().join("src/b.rs")).unwrap();
+
+        let idx2 = Index::load_or_build(dir.path());
+        assert_eq!(idx2.files.len(), 1);
+        assert!(idx2.files.contains_key(&PathBuf::from("src/a.rs")));
+        assert!(!idx2.files.contains_key(&PathBuf::from("src/b.rs")));
+    }
+
+    #[test]
+    fn test_version_mismatch_triggers_rebuild() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join(".git")).unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src/a.rs"), "fn a() {}\n").unwrap();
+
+        // Build normally
+        let idx = Index::load_or_build(dir.path());
+        assert!(idx.files.contains_key(&PathBuf::from("src/a.rs")));
+        drop(idx);
+
+        // Corrupt the version in the db
+        let db = Database::create(dir.path().join(DB_FILE)).unwrap();
+        {
+            let write_txn = db.begin_write().unwrap();
+            {
+                let mut table = write_txn.open_table(META_TABLE).unwrap();
+                let _ = table.insert("version", 999u32.to_le_bytes().as_slice());
+            }
+            write_txn.commit().unwrap();
+        }
+        drop(db);
+
+        // Reload — should detect version mismatch and rebuild
+        let idx2 = Index::load_or_build(dir.path());
+        assert!(idx2.files.contains_key(&PathBuf::from("src/a.rs")));
+    }
+
+    #[test]
+    fn test_symbols_persisted_to_redb() {
+        let (dir, idx) = build_temp_index(&[
+            ("src/main.rs", "pub fn foo(x: i32) -> bool { true }\nstruct Bar;\n"),
+        ]);
+
+        let syms = idx.exports.get(&PathBuf::from("src/main.rs")).unwrap();
+        assert!(syms.iter().any(|s| s.name == "foo" && s.kind == SymbolKind::Fn));
+        assert!(syms.iter().any(|s| s.name == "Bar" && s.kind == SymbolKind::Struct));
+        drop(idx);
+
+        // Reload and verify symbols survive the roundtrip through redb + bincode
+        let idx2 = Index::load_or_build(dir.path());
+        let syms2 = idx2.exports.get(&PathBuf::from("src/main.rs")).unwrap();
+        assert!(syms2.iter().any(|s| s.name == "foo" && s.kind == SymbolKind::Fn));
+        assert!(syms2.iter().any(|s| s.name == "Bar" && s.kind == SymbolKind::Struct));
+    }
 }
