@@ -23,9 +23,6 @@ struct Cli {
     #[arg(long, global = true)]
     json: bool,
 
-    /// Session ID for read cache (default: auto-derived from parent PID + TTY)
-    #[arg(long, global = true)]
-    session: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -62,15 +59,6 @@ enum Commands {
         #[arg(long, default_value = "200")]
         max_lines: usize,
     },
-    /// Full file read with session cache
-    #[command(alias = "r")]
-    Read {
-        /// File to read
-        file: PathBuf,
-        /// Always return full content, bypass cache
-        #[arg(long)]
-        fresh: bool,
-    },
     /// Print the agent skill file to stdout
     Skill,
 }
@@ -102,10 +90,6 @@ fn main() {
         Commands::Definition { name, from, max_lines } => {
             let idx = index::Index::load_or_build(&root);
             query::definition(&idx, &name, from.as_deref(), max_lines, cli.json)
-        }
-        Commands::Read { file, fresh } => {
-            let mut idx = index::Index::load_or_build(&root);
-            query::read(&mut idx, &file, fresh, cli.json, cli.session.as_deref())
         }
         Commands::Skill => {
             print!("{}", include_str!("skill.md"));

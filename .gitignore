@@ -1,4 +1,7 @@
 /target
 .cx-index
+.cx-index.db
+.cx-index.db.lock
 .cx-index.tmp.*
+.cx-index-test-*.db
 .ralph/

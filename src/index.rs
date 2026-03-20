@@ -1,38 +1,32 @@
 use ignore::WalkBuilder;
+use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::language::{detect_language, parse_and_extract};
 
-pub const INDEX_VERSION: u32 = 1;
-const INDEX_FILE: &str = ".cx-index";
-fn index_tmp() -> String {
-    format!(".cx-index.tmp.{}", std::process::id())
-}
+pub const INDEX_VERSION: u32 = 2;
+const DB_FILE: &str = ".cx-index.db";
 
-#[derive(Debug, Serialize, Deserialize)]
+const META_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("meta");
+const FILES_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("files");
+const SYMBOLS_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("symbols");
+
 pub struct Index {
-    pub version: u32,
     pub root: PathBuf,
+    db: Database,
+    /// In-memory mirror for fast query access.
     pub files: HashMap<PathBuf, FileEntry>,
     pub exports: HashMap<PathBuf, Vec<Symbol>>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct FileEntry {
-    #[serde(with = "system_time_serde")]
     pub mtime: SystemTime,
     pub language: Language,
-    pub read_cache: Option<ReadCache>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ReadCache {
-    pub session_id: String,
-    pub content_hash: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,39 +107,158 @@ pub enum Language {
     Elixir,
 }
 
-impl Index {
-    pub fn new(root: PathBuf) -> Self {
-        Self {
-            version: INDEX_VERSION,
-            root,
-            files: HashMap::new(),
-            exports: HashMap::new(),
+// --- Byte encoding for FileEntry (13 bytes: u64 secs + u32 nanos + u8 language) ---
+
+fn encode_file_entry(entry: &FileEntry) -> [u8; 13] {
+    let dur = entry.mtime.duration_since(UNIX_EPOCH).unwrap_or(Duration::ZERO);
+    let mut buf = [0u8; 13];
+    buf[0..8].copy_from_slice(&dur.as_secs().to_le_bytes());
+    buf[8..12].copy_from_slice(&dur.subsec_nanos().to_le_bytes());
+    buf[12] = language_to_u8(entry.language);
+    buf
+}
+
+/// Decode a FileEntry from bytes. Returns None if data is truncated or language is unknown.
+fn decode_file_entry(bytes: &[u8]) -> Option<FileEntry> {
+    if bytes.len() < 13 {
+        return None;
+    }
+    let secs = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
+    let nanos = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
+    let language = u8_to_language(bytes[12])?;
+    Some(FileEntry {
+        mtime: UNIX_EPOCH + Duration::new(secs, nanos),
+        language,
+    })
+}
+
+fn language_to_u8(lang: Language) -> u8 {
+    match lang {
+        Language::Rust => 0,
+        Language::TypeScript => 1,
+        Language::Python => 2,
+        Language::Go => 3,
+        Language::C => 4,
+        Language::Cpp => 5,
+        Language::Java => 6,
+        Language::Ruby => 7,
+        Language::CSharp => 8,
+        Language::Lua => 9,
+        Language::Zig => 10,
+        Language::Bash => 11,
+        Language::Solidity => 12,
+        Language::Elixir => 13,
+    }
+}
+
+/// Returns None for unknown language discriminants, triggering a re-index.
+fn u8_to_language(b: u8) -> Option<Language> {
+    match b {
+        0 => Some(Language::Rust),
+        1 => Some(Language::TypeScript),
+        2 => Some(Language::Python),
+        3 => Some(Language::Go),
+        4 => Some(Language::C),
+        5 => Some(Language::Cpp),
+        6 => Some(Language::Java),
+        7 => Some(Language::Ruby),
+        8 => Some(Language::CSharp),
+        9 => Some(Language::Lua),
+        10 => Some(Language::Zig),
+        11 => Some(Language::Bash),
+        12 => Some(Language::Solidity),
+        13 => Some(Language::Elixir),
+        _ => None,
+    }
+}
+
+/// Open the database, retrying on lock contention (DatabaseAlreadyOpen).
+fn open_db(path: &Path) -> Result<Database, redb::DatabaseError> {
+    let mut attempts = 0;
+    loop {
+        match Database::create(path) {
+            Ok(db) => return Ok(db),
+            Err(redb::DatabaseError::DatabaseAlreadyOpen) if attempts < 20 => {
+                attempts += 1;
+                if attempts == 1 {
+                    eprintln!("cx: database locked, waiting...");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(e) => return Err(e),
         }
     }
+}
 
+impl Index {
     /// Load or build the index for the given project root.
-    /// Performs incremental update if the index exists and version matches.
     pub fn load_or_build(root: &Path) -> Self {
-        let index_path = root.join(INDEX_FILE);
+        let db_path = root.join(DB_FILE);
 
-        // Try loading existing index
-        if let Ok(data) = fs::read(&index_path)
-            && let Ok(mut index) = serde_json::from_slice::<Index>(&data)
-                && index.version == INDEX_VERSION && index.root == root {
-                    index.incremental_update();
-                    return index;
+        let db = match open_db(&db_path) {
+            Ok(db) => db,
+            Err(e) => {
+                eprintln!("cx: failed to open database: {}", e);
+                std::process::exit(1);
+            }
+        };
+
+        // Check version
+        let version_ok = {
+            let read_txn = db.begin_read().ok();
+            read_txn.and_then(|txn| {
+                let table = txn.open_table(META_TABLE).ok()?;
+                let val = table.get("version").ok()??;
+                let bytes = val.value();
+                if bytes.len() == 4 {
+                    Some(u32::from_le_bytes(bytes.try_into().unwrap()) == INDEX_VERSION)
+                } else {
+                    None
                 }
-            // Version mismatch or corrupt — rebuild
+            }).unwrap_or(false)
+        };
 
-        let mut index = Index::new(root.to_path_buf());
-        index.full_crawl();
-        index.save();
-        warn_if_not_gitignored(root);
-        index
+        if !version_ok {
+            let mut idx = Index {
+                root: root.to_path_buf(),
+                db,
+                files: HashMap::new(),
+                exports: HashMap::new(),
+            };
+            idx.full_crawl();
+            idx.save_all();
+            warn_if_not_gitignored(root);
+            return idx;
+        }
+
+        // Load from db into memory — skip entries with corrupt/unknown data
+        let mut files = HashMap::new();
+        let mut exports = HashMap::new();
+
+        if let Ok(read_txn) = db.begin_read() {
+            if let Ok(table) = read_txn.open_table(FILES_TABLE) {
+                for (key, val) in table.iter().into_iter().flatten().flatten() {
+                    let path = PathBuf::from(key.value());
+                    if let Some(file_entry) = decode_file_entry(val.value()) {
+                        files.insert(path, file_entry);
+                    }
+                }
+            }
+            if let Ok(table) = read_txn.open_table(SYMBOLS_TABLE) {
+                for (key, val) in table.iter().into_iter().flatten().flatten() {
+                    let path = PathBuf::from(key.value());
+                    let syms: Vec<Symbol> = bincode::deserialize(val.value()).unwrap_or_default();
+                    exports.insert(path, syms);
+                }
+            }
+        }
+
+        let mut idx = Index { root: root.to_path_buf(), db, files, exports };
+        idx.incremental_update();
+        idx
     }
 
     /// Crawl from project root, collecting all supported files.
-    /// Respects .gitignore and always skips the index file.
     fn full_crawl(&mut self) {
         for entry in walk(&self.root) {
             let path = entry.path();
@@ -166,14 +279,9 @@ impl Index {
 
             self.files.insert(
                 rel_path.clone(),
-                FileEntry {
-                    mtime,
-                    language: lang,
-                    read_cache: None,
-                },
+                FileEntry { mtime, language: lang },
             );
 
-            // Parse and extract symbols
             let symbols = match fs::read(path) {
                 Ok(source) => parse_and_extract(lang, &source, path),
                 Err(e) => {
@@ -187,7 +295,6 @@ impl Index {
 
     /// Check for changed/new/deleted files and update the index.
     fn incremental_update(&mut self) {
-        // Collect current files on disk
         let mut on_disk: HashMap<PathBuf, (SystemTime, Language)> = HashMap::new();
 
         for entry in walk(&self.root) {
@@ -212,107 +319,155 @@ impl Index {
 
         // Remove deleted files
         let indexed_paths: Vec<PathBuf> = self.files.keys().cloned().collect();
+        let mut deleted = Vec::new();
         for path in indexed_paths {
             if !on_disk.contains_key(&path) {
                 self.files.remove(&path);
                 self.exports.remove(&path);
+                deleted.push(path);
             }
         }
 
         // Add new or update changed files
-        let mut changed = false;
+        let mut changed: Vec<(PathBuf, FileEntry, Vec<Symbol>)> = Vec::new();
         for (path, (mtime, lang)) in &on_disk {
             match self.files.get(path) {
-                Some(entry) if entry.mtime == *mtime => {
-                    // Unchanged — skip
-                }
+                Some(entry) if entry.mtime == *mtime => {}
                 _ => {
-                    // New or changed — update entry, preserve read_cache
-                    let read_cache = self
-                        .files
-                        .get(path)
-                        .and_then(|e| e.read_cache.as_ref())
-                        .map(|rc| ReadCache {
-                            session_id: rc.session_id.clone(),
-                            content_hash: rc.content_hash,
-                        });
+                    let file_entry = FileEntry { mtime: *mtime, language: *lang };
+                    self.files.insert(path.clone(), file_entry.clone());
 
-                    self.files.insert(
-                        path.clone(),
-                        FileEntry {
-                            mtime: *mtime,
-                            language: *lang,
-                            read_cache,
-                        },
-                    );
-                    // Re-parse and extract symbols
                     let abs_path = self.root.join(path);
                     let symbols = match fs::read(&abs_path) {
                         Ok(source) => parse_and_extract(*lang, &source, &abs_path),
                         Err(_) => Vec::new(),
                     };
-                    self.exports.insert(path.clone(), symbols);
-                    changed = true;
+                    self.exports.insert(path.clone(), symbols.clone());
+                    changed.push((path.clone(), file_entry, symbols));
                 }
             }
         }
 
-        if changed {
-            self.save();
+        if !deleted.is_empty() || !changed.is_empty() {
+            let write_txn = match self.db.begin_write() {
+                Ok(txn) => txn,
+                Err(e) => {
+                    eprintln!("cx: failed to begin write for incremental update: {}", e);
+                    return;
+                }
+            };
+            {
+                let Ok(mut files_table) = write_txn.open_table(FILES_TABLE) else {
+                    eprintln!("cx: failed to open files table — rebuild with: rm .cx-index.db");
+                    return;
+                };
+                let Ok(mut syms_table) = write_txn.open_table(SYMBOLS_TABLE) else {
+                    eprintln!("cx: failed to open symbols table — rebuild with: rm .cx-index.db");
+                    return;
+                };
+                for path in &deleted {
+                    let key = path.to_string_lossy();
+                    let _ = files_table.remove(key.as_ref());
+                    let _ = syms_table.remove(key.as_ref());
+                }
+                for (path, entry, symbols) in &changed {
+                    let key = path.to_string_lossy();
+                    match bincode::serialize(symbols) {
+                        Ok(sym_bytes) => {
+                            let _ = files_table.insert(key.as_ref(), encode_file_entry(entry).as_slice());
+                            let _ = syms_table.insert(key.as_ref(), sym_bytes.as_slice());
+                        }
+                        Err(e) => eprintln!("cx: failed to serialize symbols for {}: {}", key, e),
+                    }
+                }
+            }
+            if let Err(e) = write_txn.commit() {
+                eprintln!("cx: failed to commit incremental update: {}", e);
+            }
         }
     }
 
-    /// Atomically write the index to disk.
-    pub fn save(&self) {
-        let index_path = self.root.join(INDEX_FILE);
-        let tmp_path = self.root.join(index_tmp());
-
-        let data = match serde_json::to_vec(self) {
-            Ok(d) => d,
+    /// Write the entire index to the database (used after full_crawl).
+    /// Clears all existing data first to avoid stale entries.
+    fn save_all(&self) {
+        let write_txn = match self.db.begin_write() {
+            Ok(txn) => txn,
             Err(e) => {
-                eprintln!("cx: failed to serialize index: {}", e);
+                eprintln!("cx: failed to begin write: {}", e);
                 return;
             }
         };
 
-        if let Err(e) = fs::write(&tmp_path, &data) {
-            eprintln!("cx: failed to write index tmp: {}", e);
-            return;
+        // Delete and recreate tables to clear stale entries
+        let _ = write_txn.delete_table(FILES_TABLE);
+        let _ = write_txn.delete_table(SYMBOLS_TABLE);
+
+        // Write version
+        {
+            let Ok(mut table) = write_txn.open_table(META_TABLE) else {
+                eprintln!("cx: failed to open meta table — rebuild with: rm .cx-index.db");
+                return;
+            };
+            let _ = table.insert("version", INDEX_VERSION.to_le_bytes().as_slice());
         }
 
-        if let Err(e) = fs::rename(&tmp_path, &index_path) {
-            eprintln!("cx: failed to rename index: {}", e);
+        // Write files
+        {
+            let Ok(mut table) = write_txn.open_table(FILES_TABLE) else {
+                eprintln!("cx: failed to open files table — rebuild with: rm .cx-index.db");
+                return;
+            };
+            for (path, entry) in &self.files {
+                let key = path.to_string_lossy();
+                let _ = table.insert(key.as_ref(), encode_file_entry(entry).as_slice());
+            }
+        }
+
+        // Write symbols
+        {
+            let Ok(mut table) = write_txn.open_table(SYMBOLS_TABLE) else {
+                eprintln!("cx: failed to open symbols table — rebuild with: rm .cx-index.db");
+                return;
+            };
+            for (path, symbols) in &self.exports {
+                let key = path.to_string_lossy();
+                match bincode::serialize(symbols) {
+                    Ok(sym_bytes) => { let _ = table.insert(key.as_ref(), sym_bytes.as_slice()); }
+                    Err(e) => eprintln!("cx: failed to serialize symbols for {}: {}", key, e),
+                }
+            }
+        }
+
+        if let Err(e) = write_txn.commit() {
+            eprintln!("cx: failed to commit: {}", e);
         }
     }
+
 }
 
-/// Warn once if .cx-index is not in .gitignore.
+/// Warn once if .cx-index.db is not in .gitignore.
 fn warn_if_not_gitignored(root: &Path) {
     use std::process::Command;
     let ok = Command::new("git")
-        .args(["check-ignore", "-q", INDEX_FILE])
+        .args(["check-ignore", "-q", DB_FILE])
         .current_dir(root)
         .status()
         .is_ok_and(|s| s.success());
     if !ok {
-        eprintln!("cx: created .cx-index — consider adding it to .gitignore");
+        eprintln!("cx: created .cx-index.db — consider adding it to .gitignore");
     }
 }
 
-/// Walk the project tree, respecting .gitignore and skipping the index file.
+/// Walk the project tree, respecting .gitignore and skipping the index/db files.
 fn walk(root: &Path) -> impl Iterator<Item = ignore::DirEntry> {
     WalkBuilder::new(root)
-        .hidden(false)       // don't skip dotfiles — gitignore handles what to skip
-        .git_ignore(true)    // respect .gitignore
-        .git_global(true)    // respect global gitignore
-        .git_exclude(true)   // respect .git/info/exclude
+        .hidden(false)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
         .filter_entry(|e| {
             let name = e.file_name().to_str().unwrap_or("");
-            // Always skip .git, the index file, and .cx-ignore sentinel dirs
-            if name == ".git" || name == INDEX_FILE {
-                return false;
-            }
-            if name.starts_with(".cx-index.tmp") {
+            if name == ".git" || name.starts_with(".cx-index") {
                 return false;
             }
             if e.file_type().is_some_and(|ft| ft.is_dir()) && e.path().join(".cx-ignore").exists() {
@@ -325,101 +480,116 @@ fn walk(root: &Path) -> impl Iterator<Item = ignore::DirEntry> {
         .filter(|e| e.file_type().is_some_and(|ft| ft.is_file()))
 }
 
-mod system_time_serde {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-    pub fn serialize<S: Serializer>(time: &SystemTime, s: S) -> Result<S::Ok, S::Error> {
-        let dur = time.duration_since(UNIX_EPOCH).unwrap_or(Duration::ZERO);
-        (dur.as_secs(), dur.subsec_nanos()).serialize(s)
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<SystemTime, D::Error> {
-        let (secs, nanos): (u64, u32) = Deserialize::deserialize(d)?;
-        Ok(UNIX_EPOCH + Duration::new(secs, nanos))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::env;
 
     #[test]
-    fn test_index_new() {
-        let idx = Index::new(PathBuf::from("/tmp/test"));
-        assert_eq!(idx.version, INDEX_VERSION);
-        assert!(idx.files.is_empty());
-        assert!(idx.exports.is_empty());
+    fn test_file_entry_encode_roundtrip() {
+        let entry = FileEntry {
+            mtime: UNIX_EPOCH + Duration::new(1234567890, 42),
+            language: Language::Rust,
+        };
+        let bytes = encode_file_entry(&entry);
+        let decoded = decode_file_entry(&bytes).expect("should decode");
+        assert_eq!(
+            entry.mtime.duration_since(UNIX_EPOCH).unwrap(),
+            decoded.mtime.duration_since(UNIX_EPOCH).unwrap()
+        );
+        assert_eq!(entry.language, decoded.language);
     }
 
     #[test]
-    fn test_index_serialize_roundtrip() {
-        let mut idx = Index::new(PathBuf::from("/tmp/test"));
-        idx.files.insert(
-            PathBuf::from("src/main.rs"),
-            FileEntry {
-                mtime: SystemTime::UNIX_EPOCH,
-                language: Language::Rust,
-                read_cache: None,
-            },
-        );
+    fn test_file_entry_decode_truncated_returns_none() {
+        assert!(decode_file_entry(&[0u8; 5]).is_none());
+        assert!(decode_file_entry(&[]).is_none());
+    }
 
-        let data = serde_json::to_vec(&idx).unwrap();
-        let idx2: Index = serde_json::from_slice(&data).unwrap();
-        assert_eq!(idx2.version, INDEX_VERSION);
-        assert!(idx2.files.contains_key(&PathBuf::from("src/main.rs")));
+    #[test]
+    fn test_file_entry_decode_unknown_language_returns_none() {
+        let entry = FileEntry {
+            mtime: UNIX_EPOCH + Duration::new(100, 0),
+            language: Language::Rust,
+        };
+        let mut bytes = encode_file_entry(&entry);
+        bytes[12] = 255; // unknown language
+        assert!(decode_file_entry(&bytes).is_none());
+    }
+
+    #[test]
+    fn test_language_roundtrip() {
+        for lang in [
+            Language::Rust, Language::TypeScript, Language::Python, Language::Go,
+            Language::C, Language::Cpp, Language::Java, Language::Ruby,
+            Language::CSharp, Language::Lua, Language::Zig, Language::Bash,
+            Language::Solidity, Language::Elixir,
+        ] {
+            assert_eq!(u8_to_language(language_to_u8(lang)), Some(lang));
+        }
+    }
+
+    #[test]
+    fn test_u8_to_language_unknown_returns_none() {
+        assert!(u8_to_language(200).is_none());
+        assert!(u8_to_language(14).is_none());
+        assert!(u8_to_language(255).is_none());
+    }
+
+    #[test]
+    fn test_symbol_bincode_roundtrip() {
+        let symbols = vec![
+            Symbol {
+                name: "foo".to_string(),
+                kind: SymbolKind::Fn,
+                signature: "pub fn foo(x: i32) -> bool".to_string(),
+                byte_range: (100, 500),
+            },
+            Symbol {
+                name: "Bar".to_string(),
+                kind: SymbolKind::Struct,
+                signature: "pub struct Bar".to_string(),
+                byte_range: (600, 800),
+            },
+        ];
+        let bytes = bincode::serialize(&symbols).unwrap();
+        let decoded: Vec<Symbol> = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded[0].name, "foo");
+        assert_eq!(decoded[1].kind, SymbolKind::Struct);
+        assert_eq!(decoded[0].byte_range, (100, 500));
     }
 
     #[test]
     fn test_full_crawl_finds_rust_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test-crawl.db");
+        let db = Database::create(&db_path).unwrap();
+        // Use the real project root for crawling, but store db in tempdir
         let cwd = env::current_dir().unwrap();
-        let mut idx = Index::new(cwd);
+        let mut idx = Index {
+            root: cwd,
+            db,
+            files: HashMap::new(),
+            exports: HashMap::new(),
+        };
         idx.full_crawl();
 
-        // Should find at least src/main.rs
         assert!(idx.files.contains_key(&PathBuf::from("src/main.rs")));
-
-        // Should not contain target/ files
         for path in idx.files.keys() {
-            assert!(
-                !path.starts_with("target/"),
-                "found target/ file in index: {:?}",
-                path
-            );
+            assert!(!path.starts_with("target/"), "found target/ file: {:?}", path);
         }
     }
 
     #[test]
     fn test_walk_respects_gitignore() {
         let cwd = env::current_dir().unwrap();
-
         let entries: Vec<_> = walk(&cwd).collect();
-
         for entry in &entries {
             let path = entry.path();
             let rel = path.strip_prefix(&cwd).unwrap_or(path);
-            assert!(
-                !rel.starts_with(".git/"),
-                "found .git file: {:?}",
-                rel
-            );
-            assert!(
-                !rel.starts_with("target/"),
-                "found target file: {:?}",
-                rel
-            );
+            assert!(!rel.starts_with(".git/"), "found .git file: {:?}", rel);
+            assert!(!rel.starts_with("target/"), "found target file: {:?}", rel);
         }
-    }
-
-    #[test]
-    fn test_incremental_detects_no_changes() {
-        let cwd = env::current_dir().unwrap();
-        let mut idx = Index::new(cwd);
-        idx.full_crawl();
-
-        let file_count_before = idx.files.len();
-        idx.incremental_update();
-        assert_eq!(idx.files.len(), file_count_before);
     }
 }

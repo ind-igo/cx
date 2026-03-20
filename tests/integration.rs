@@ -60,15 +60,6 @@ fn definition_main() {
 }
 
 #[test]
-fn read_returns_content() {
-    let out = cx().args(["read", "src/main.rs", "--fresh"]).output().unwrap();
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(out.status.success());
-    assert!(stdout.contains("mod index;"));
-    assert!(stdout.contains("fn main()"));
-}
-
-#[test]
 fn overview_nonexistent_exits_1() {
     let out = cx().args(["overview", "nonexistent.rs"]).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
@@ -102,41 +93,6 @@ fn json_definition_always_array() {
     // Always an array, even for single results (audit fix)
     assert!(parsed.is_array(), "definition JSON should always be an array: {stdout}");
     assert_eq!(parsed.as_array().unwrap().len(), 1);
-}
-
-// --- Read session cache tests ---
-
-#[test]
-fn read_cache_unchanged_on_reread() {
-    let dir = temp_project(&[("src/hello.rs", "fn hello() {}\n")]);
-    // First read — returns content
-    let out1 = cx_in(dir.path()).args(["read", "src/hello.rs"]).output().unwrap();
-    let stdout1 = String::from_utf8_lossy(&out1.stdout);
-    assert!(out1.status.success());
-    assert!(stdout1.contains("fn hello()"), "first read should return content: {stdout1}");
-
-    // Second read — should return unchanged
-    let out2 = cx_in(dir.path()).args(["read", "src/hello.rs"]).output().unwrap();
-    let stdout2 = String::from_utf8_lossy(&out2.stdout);
-    assert!(out2.status.success());
-    assert!(stdout2.contains("unchanged"), "second read should be unchanged: {stdout2}");
-}
-
-#[test]
-fn read_cache_detects_change() {
-    let dir = temp_project(&[("src/hello.rs", "fn hello() {}\n")]);
-    // First read
-    let _ = cx_in(dir.path()).args(["read", "src/hello.rs"]).output().unwrap();
-
-    // Modify the file
-    std::fs::write(dir.path().join("src/hello.rs"), "fn hello_changed() {}\n").unwrap();
-
-    // Second read — should detect change
-    let out = cx_in(dir.path()).args(["read", "src/hello.rs"]).output().unwrap();
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(out.status.success());
-    assert!(stdout.contains("changed"), "should detect change: {stdout}");
-    assert!(stdout.contains("hello_changed"), "should return new content: {stdout}");
 }
 
 // --- Definition --from and --max-lines tests ---
@@ -189,7 +145,7 @@ fn definition_max_lines_truncates() {
     assert!(item["lines"].as_u64().unwrap() > 200, "should report total lines: {stdout}");
 }
 
-// --- JSON output for definition and read ---
+// --- JSON output for definition ---
 
 #[test]
 fn json_definition_has_expected_fields() {
@@ -201,14 +157,4 @@ fn json_definition_has_expected_fields() {
     assert!(item["signature"].is_string());
     assert!(item["range"].is_array());
     assert!(item["body"].is_string());
-}
-
-#[test]
-fn json_read_returns_content() {
-    let out = cx().args(["--json", "read", "src/main.rs", "--fresh"]).output().unwrap();
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(out.status.success());
-    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert!(parsed["file"].is_string());
-    assert!(parsed["content"].as_str().unwrap().contains("fn main()"));
 }

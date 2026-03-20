@@ -12,21 +12,18 @@ cargo install cx-cli
 
 ## Agent integration
 
-Generate the agent prompt and add it to your config:
+`cx skill` prints a prompt that teaches any coding agent to prefer cx over raw file reads. Pipe it into whichever instructions file your agent reads:
 
 ```bash
-# Claude Code — import file
+# Claude Code (CLAUDE.md)
 cx skill > ~/.claude/CX.md
 # then add @CX.md to ~/.claude/CLAUDE.md
 
-# Or append directly to any agent's system prompt
-cx skill >> ~/.claude/CLAUDE.md
-
-# Cursor
-cx skill >> .cursorrules
+# Codex, Copilot, Zed, and other AGENTS.md-compatible tools
+cx skill >> AGENTS.md
 ```
 
-The prompt teaches the agent to prefer cx over raw file reads and includes the command reference.
+That's it. The prompt includes the command reference and the escalation hierarchy (overview → definition → read).
 
 ## Why
 
@@ -43,10 +40,9 @@ cx gives agents a cost ladder. Start cheap, escalate only when needed:
 ```
 cx overview src/fees.rs       ~200 tokens   "what's in this file?"
 cx definition --name calc     ~500 tokens   "show me this function"
-cx read src/fees.rs           full file     "I need everything" (cached across calls)
 ```
 
-Benchmarked on real agent workflows, cx reduces token consumption by **15-80%** depending on the task, with the biggest savings on targeted lookups and re-reads.
+Benchmarked on real agent workflows, cx reduces token consumption by **15-80%** depending on the task, with the biggest savings on targeted lookups and chain reads.
 
 ## Usage
 
@@ -92,26 +88,13 @@ body: ...
 
 Use `--from src/foo.rs` to disambiguate when multiple files define the same name. `--max-lines` (default 200) truncates large bodies.
 
-### Read -- cached file read
-
-```
-$ cx read src/main.rs          # returns full content, caches hash
-$ cx read src/main.rs          # file unchanged: "status: unchanged" (~20 tokens)
-                               # file changed: returns full new content
-$ cx read src/main.rs --fresh  # force full re-read, bypass cache
-```
-
-cx automatically detects edits via content hash — modified files return new content without needing `--fresh`. Use `--fresh` to skip the cache check entirely.
-
-Pass `--session <ID>` to share the read cache across separate shell invocations (e.g., when each command runs in a new subprocess). Use a stable ID like a conversation or task ID.
-
 ## How it works
 
-On first invocation, cx builds an index (`.cx-index`) by parsing all source files with tree-sitter. The index stores symbols, signatures, and byte ranges for every file. Subsequent invocations incrementally update only changed files.
+On first invocation, cx builds an index (`.cx-index.db`) by parsing all source files with tree-sitter. The index stores symbols, signatures, and byte ranges for every file. Subsequent invocations incrementally update only changed files.
 
 **Supported languages:** Rust, TypeScript/JavaScript, Python, Go, C, C++, Java, Ruby, C#, Lua, Zig, Bash, Solidity, Elixir
 
-**Index location:** `.cx-index` in the project root (add to `.gitignore`)
+**Index location:** `.cx-index.db` in the project root (add to `.gitignore`)
 
 **Project root detection:** walks up from cwd looking for `.git`. Override with `--root /path/to/project`.
 
