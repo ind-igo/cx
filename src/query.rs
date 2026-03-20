@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use crate::index::{Index, Symbol, SymbolKind};
+use crate::language;
 use crate::output::{print_toon, print_json};
 use crate::util::glob::glob_match;
 
@@ -189,6 +190,88 @@ pub fn definition(
     }
 
     0
+}
+
+#[derive(Serialize)]
+struct ReferenceRow {
+    file: String,
+    line: usize,
+    context: String,
+}
+
+/// Find all usages of a symbol name across project files.
+pub fn references(
+    index: &Index,
+    name: &str,
+    file: Option<&Path>,
+    json: bool,
+) -> i32 {
+    let rel_path = file.map(|f| make_relative(f, &index.root));
+
+    let files_to_search: Vec<&PathBuf> = match rel_path {
+        Some(ref rel) => {
+            if index.files.contains_key(rel) {
+                vec![rel]
+            } else {
+                eprintln!("cx: file not in index: {}", rel.display());
+                return 1;
+            }
+        }
+        None => index.files.keys().collect(),
+    };
+
+    let mut rows: Vec<ReferenceRow> = Vec::new();
+    let name_bytes = name.as_bytes();
+
+    for path in files_to_search {
+        let entry = &index.files[path];
+        let abs_path = index.root.join(path);
+        let source = match fs::read(&abs_path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        // Skip files that can't possibly contain the name
+        if !contains_bytes(&source, name_bytes) {
+            continue;
+        }
+
+        let refs = language::find_references(entry.language, &source, &abs_path, name);
+        if refs.is_empty() {
+            continue;
+        }
+
+        // Convert to str once per file for context extraction
+        let text = std::str::from_utf8(&source).ok();
+        let lines: Vec<&str> = text.map(|t| t.lines().collect()).unwrap_or_default();
+
+        for r in refs {
+            let context = lines
+                .get(r.line.wrapping_sub(1))
+                .map(|l| l.trim().to_string())
+                .unwrap_or_default();
+            rows.push(ReferenceRow {
+                file: path.display().to_string(),
+                line: r.line,
+                context,
+            });
+        }
+    }
+
+    if rows.is_empty() {
+        return 2;
+    }
+
+    rows.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
+
+    if json { print_json(&rows) } else { print_toon(&rows) }
+
+    0
+}
+
+/// Fast substring check on raw bytes — skips files that can't contain the symbol.
+fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack.windows(needle.len()).any(|w| w == needle)
 }
 
 fn read_body(root: &Path, file: &Path, byte_range: (usize, usize)) -> Option<String> {

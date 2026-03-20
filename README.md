@@ -23,7 +23,7 @@ cx skill > ~/.claude/CX.md
 cx skill >> AGENTS.md
 ```
 
-That's it. The prompt includes the command reference and the escalation hierarchy (overview → definition → read).
+That's it. The prompt includes the command reference and the escalation hierarchy (overview → symbols → definition / references → read).
 
 ## Why
 
@@ -40,6 +40,7 @@ cx gives agents a cost ladder. Start cheap, escalate only when needed:
 ```
 cx overview src/fees.rs       ~200 tokens   "what's in this file?"
 cx definition --name calc     ~500 tokens   "show me this function"
+cx references --name calc     ~1 query      "where is this used?"
 ```
 
 Benchmarked on real agent workflows, cx reduces token consumption by **15-80%** depending on the task, with the biggest savings on targeted lookups and chain reads.
@@ -88,6 +89,22 @@ body: ...
 
 Use `--from src/foo.rs` to disambiguate when multiple files define the same name. `--max-lines` (default 200) truncates large bodies.
 
+### References -- find all usages of a symbol
+
+```
+$ cx references --name Symbol
+
+[18]{file,line,context}:
+  src/index.rs,23,"pub exports: HashMap<PathBuf, Vec<Symbol>>,"
+  src/index.rs,33,"pub struct Symbol {"
+  src/query.rs,6,"use crate::index::{Index, Symbol, SymbolKind};"
+  ...
+```
+
+Use `--file src/index.rs` to scope the search to a single file. Includes both definition and usage sites.
+
+References are computed on-the-fly via AST walking (not indexed), so results are always fresh.
+
 ## How it works
 
 On first invocation, cx builds an index (`.cx-index.db`) by parsing all source files with tree-sitter. The index stores symbols, signatures, and byte ranges for every file. Subsequent invocations incrementally update only changed files.
@@ -113,7 +130,7 @@ cx uses tree-sitter grammars. To add a new language:
    - A grammar function (e.g., `fn swift_grammar(_ext: &str) -> tree_sitter::Language`)
    - A query constant with tree-sitter patterns for the language's symbols
    - A query function returning the constant
-   - A `LanguageConfig` entry in the `LANGUAGES` array
+   - A `LanguageConfig` entry in the `LANGUAGES` array (including `ref_node_types` for find-references support)
 3. Add the language variant to `Language` enum in `src/index.rs`
 4. Add tests
 
@@ -148,6 +165,7 @@ LanguageConfig {
     sig_body_child: None,
     sig_delimiter: Some(b'{'),
     kind_overrides: &[],
+    ref_node_types: &["simple_identifier", "type_identifier"],
 },
 ```
 

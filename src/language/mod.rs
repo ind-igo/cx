@@ -23,6 +23,8 @@ struct LanguageConfig {
     /// (capture_name, node_kind, SymbolKind) — checked before defaults.
     /// Empty node_kind matches any node.
     kind_overrides: &'static [(&'static str, &'static str, SymbolKind)],
+    /// Node kinds that represent identifier references (for find-references).
+    ref_node_types: &'static [&'static str],
 }
 
 // --- Grammar functions ---
@@ -309,6 +311,7 @@ static LANGUAGES: &[LanguageConfig] = &[
             ("definition.interface", "", SymbolKind::Trait),
             ("definition.macro", "", SymbolKind::Fn),
         ],
+        ref_node_types: &["identifier", "type_identifier", "field_identifier"],
     },
     LanguageConfig {
         language: Language::TypeScript,
@@ -318,6 +321,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         sig_body_child: None,
         sig_delimiter: Some(b'{'),
         kind_overrides: &[],
+        ref_node_types: &["identifier", "type_identifier", "property_identifier", "shorthand_property_identifier", "shorthand_property_identifier_pattern"],
     },
     LanguageConfig {
         language: Language::Python,
@@ -327,6 +331,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         sig_body_child: Some("block"),
         sig_delimiter: None,
         kind_overrides: &[],
+        ref_node_types: &["identifier"],
     },
     LanguageConfig {
         language: Language::Go,
@@ -336,6 +341,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         sig_body_child: None,
         sig_delimiter: Some(b'{'),
         kind_overrides: &[],
+        ref_node_types: &["identifier", "type_identifier", "field_identifier"],
     },
     LanguageConfig {
         language: Language::C,
@@ -347,6 +353,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         kind_overrides: &[
             ("definition.class", "", SymbolKind::Struct),
         ],
+        ref_node_types: &["identifier", "type_identifier", "field_identifier"],
     },
     LanguageConfig {
         language: Language::Cpp,
@@ -356,6 +363,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         sig_body_child: None,
         sig_delimiter: Some(b'{'),
         kind_overrides: &[],
+        ref_node_types: &["identifier", "type_identifier", "field_identifier"],
     },
     LanguageConfig {
         language: Language::Java,
@@ -365,6 +373,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         sig_body_child: None,
         sig_delimiter: Some(b'{'),
         kind_overrides: &[],
+        ref_node_types: &["identifier"],
     },
     LanguageConfig {
         language: Language::Ruby,
@@ -374,6 +383,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         sig_body_child: None,
         sig_delimiter: None,
         kind_overrides: &[],
+        ref_node_types: &["identifier", "constant"],
     },
     LanguageConfig {
         language: Language::CSharp,
@@ -385,6 +395,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         kind_overrides: &[
             ("definition.class", "struct_declaration", SymbolKind::Struct),
         ],
+        ref_node_types: &["identifier"],
     },
     LanguageConfig {
         language: Language::Lua,
@@ -394,6 +405,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         sig_body_child: None,
         sig_delimiter: None,
         kind_overrides: &[],
+        ref_node_types: &["identifier"],
     },
     LanguageConfig {
         language: Language::Zig,
@@ -405,6 +417,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         kind_overrides: &[
             ("definition.class", "variable_declaration", SymbolKind::Struct),
         ],
+        ref_node_types: &["identifier"],
     },
     LanguageConfig {
         language: Language::Bash,
@@ -414,6 +427,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         sig_body_child: None,
         sig_delimiter: Some(b'{'),
         kind_overrides: &[],
+        ref_node_types: &["word"],
     },
     LanguageConfig {
         language: Language::Solidity,
@@ -423,6 +437,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         sig_body_child: None,
         sig_delimiter: Some(b'{'),
         kind_overrides: &[],
+        ref_node_types: &["identifier"],
     },
     LanguageConfig {
         language: Language::Elixir,
@@ -432,6 +447,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         sig_body_child: None,
         sig_delimiter: None,
         kind_overrides: &[],
+        ref_node_types: &["identifier", "alias"],
     },
 ];
 
@@ -443,6 +459,50 @@ pub fn detect_language(path: &Path) -> Option<Language> {
         .iter()
         .find(|c| c.extensions.contains(&ext))
         .map(|c| c.language)
+}
+
+pub struct Reference {
+    pub line: usize, // 1-based
+}
+
+/// Parse source and find all identifier nodes whose text matches `name`.
+pub fn find_references(lang: Language, source: &[u8], path: &Path, name: &str) -> Vec<Reference> {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let config = match LANGUAGES.iter().find(|c| c.language == lang) {
+        Some(c) => c,
+        None => return Vec::new(),
+    };
+
+    let ts_lang = (config.grammar)(ext);
+    let mut parser = Parser::new();
+    if parser.set_language(&ts_lang).is_err() {
+        return Vec::new();
+    }
+
+    let tree = match parser.parse(source, None) {
+        Some(t) => t,
+        None => return Vec::new(),
+    };
+
+    let mut refs = Vec::new();
+    let mut stack = vec![tree.root_node()];
+    while let Some(node) = stack.pop() {
+        if node.child_count() == 0
+            && config.ref_node_types.contains(&node.kind())
+            && node.utf8_text(source).ok() == Some(name)
+        {
+            refs.push(Reference {
+                line: node.start_position().row + 1,
+            });
+        }
+        for i in (0..node.child_count()).rev() {
+            if let Some(child) = node.child(i) {
+                stack.push(child);
+            }
+        }
+    }
+
+    refs
 }
 
 /// Parse a file and extract symbols for the given language.
@@ -1033,5 +1093,45 @@ mod tests {
         let func = syms.iter().find(|s| s.name == "get_user");
         assert!(func.is_some(), "should find function: {:?}", syms);
         assert_eq!(func.unwrap().kind, SymbolKind::Fn);
+    }
+
+    // --- find_references tests ---
+
+    #[test]
+    fn refs_rust_finds_all_usages() {
+        let src = "struct Foo { x: i32 }\nfn bar(f: Foo) -> Foo { f }";
+        let refs = find_references(Language::Rust, src.as_bytes(), &PathBuf::from("test.rs"), "Foo");
+        assert_eq!(refs.len(), 3, "should find struct def + 2 usages: {:?}", refs.iter().map(|r| r.line).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn refs_rust_no_match() {
+        let src = "fn main() {}";
+        let refs = find_references(Language::Rust, src.as_bytes(), &PathBuf::from("test.rs"), "nonexistent");
+        assert!(refs.is_empty());
+    }
+
+    #[test]
+    fn refs_line_column_correct() {
+        let src = "let x = 1;\nlet y = x + x;";
+        let refs = find_references(Language::Rust, src.as_bytes(), &PathBuf::from("test.rs"), "x");
+        assert_eq!(refs.len(), 3);
+        assert_eq!(refs[0].line, 1);
+        assert_eq!(refs[1].line, 2);
+        assert_eq!(refs[2].line, 2);
+    }
+
+    #[test]
+    fn refs_typescript_identifier() {
+        let src = "const foo = 1;\nconsole.log(foo);";
+        let refs = find_references(Language::TypeScript, src.as_bytes(), &PathBuf::from("test.ts"), "foo");
+        assert_eq!(refs.len(), 2);
+    }
+
+    #[test]
+    fn refs_python_identifier() {
+        let src = "def greet(name):\n    return name";
+        let refs = find_references(Language::Python, src.as_bytes(), &PathBuf::from("test.py"), "name");
+        assert_eq!(refs.len(), 2);
     }
 }

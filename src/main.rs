@@ -59,6 +59,16 @@ enum Commands {
         #[arg(long, default_value = "200")]
         max_lines: usize,
     },
+    /// Find all usages of a symbol across the project
+    #[command(alias = "r")]
+    References {
+        /// Symbol name to find
+        #[arg(long)]
+        name: String,
+        /// Limit search to a specific file
+        #[arg(long)]
+        file: Option<PathBuf>,
+    },
     /// Print the agent skill file to stdout
     Skill,
 }
@@ -90,6 +100,10 @@ fn main() {
         Commands::Definition { name, from, max_lines } => {
             let idx = index::Index::load_or_build(&root);
             query::definition(&idx, &name, from.as_deref(), max_lines, cli.json)
+        }
+        Commands::References { name, file } => {
+            let idx = index::Index::load_or_build(&root);
+            query::references(&idx, &name, file.as_deref(), cli.json)
         }
         Commands::Skill => {
             print!("{}", include_str!("skill.md"));
