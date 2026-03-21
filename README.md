@@ -6,6 +6,12 @@ Semantic code navigation for AI agents — file overviews, symbol search, defini
 
 ## Install
 
+```bash
+curl -sL https://raw.githubusercontent.com/ind-igo/cx/master/install.sh | sh
+```
+
+Or with Cargo:
+
 ```
 cargo install cx-cli
 ```
