@@ -33,6 +33,7 @@ tree-sitter-zig = "1.1.2"
 tree-sitter-solidity = "1.2.13"
 tree-sitter-elixir = "0.3.5"
 ignore = "0.4.25"
+memchr = "2"
 redb = "2"
 bincode = "1"
 

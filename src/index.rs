@@ -90,21 +90,22 @@ impl SymbolKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[repr(u8)]
 pub enum Language {
-    Rust,
-    TypeScript,
-    Python,
-    Go,
-    C,
-    Cpp,
-    Java,
-    Ruby,
-    CSharp,
-    Lua,
-    Zig,
-    Bash,
-    Solidity,
-    Elixir,
+    Rust = 0,
+    TypeScript = 1,
+    Python = 2,
+    Go = 3,
+    C = 4,
+    Cpp = 5,
+    Java = 6,
+    Ruby = 7,
+    CSharp = 8,
+    Lua = 9,
+    Zig = 10,
+    Bash = 11,
+    Solidity = 12,
+    Elixir = 13,
 }
 
 // --- Byte encoding for FileEntry (13 bytes: u64 secs + u32 nanos + u8 language) ---
@@ -133,42 +134,16 @@ fn decode_file_entry(bytes: &[u8]) -> Option<FileEntry> {
 }
 
 fn language_to_u8(lang: Language) -> u8 {
-    match lang {
-        Language::Rust => 0,
-        Language::TypeScript => 1,
-        Language::Python => 2,
-        Language::Go => 3,
-        Language::C => 4,
-        Language::Cpp => 5,
-        Language::Java => 6,
-        Language::Ruby => 7,
-        Language::CSharp => 8,
-        Language::Lua => 9,
-        Language::Zig => 10,
-        Language::Bash => 11,
-        Language::Solidity => 12,
-        Language::Elixir => 13,
-    }
+    lang as u8
 }
 
 /// Returns None for unknown language discriminants, triggering a re-index.
 fn u8_to_language(b: u8) -> Option<Language> {
-    match b {
-        0 => Some(Language::Rust),
-        1 => Some(Language::TypeScript),
-        2 => Some(Language::Python),
-        3 => Some(Language::Go),
-        4 => Some(Language::C),
-        5 => Some(Language::Cpp),
-        6 => Some(Language::Java),
-        7 => Some(Language::Ruby),
-        8 => Some(Language::CSharp),
-        9 => Some(Language::Lua),
-        10 => Some(Language::Zig),
-        11 => Some(Language::Bash),
-        12 => Some(Language::Solidity),
-        13 => Some(Language::Elixir),
-        _ => None,
+    if b <= Language::Elixir as u8 {
+        // SAFETY: Language is #[repr(u8)] and b is within the valid discriminant range.
+        Some(unsafe { std::mem::transmute::<u8, Language>(b) })
+    } else {
+        None
     }
 }
 

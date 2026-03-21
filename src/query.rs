@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use memchr::memmem;
 use serde::Serialize;
 
 use crate::index::{Index, Symbol, SymbolKind};
@@ -11,15 +12,9 @@ use crate::util::glob::glob_match;
 // --- Serializable output types ---
 
 #[derive(Serialize)]
-struct SymbolRowSingle {
-    name: String,
-    kind: String,
-    signature: String,
-}
-
-#[derive(Serialize)]
-struct SymbolRowFull {
-    file: String,
+struct SymbolRowOut {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    file: Option<String>,
     name: String,
     kind: String,
     signature: String,
@@ -28,8 +23,7 @@ struct SymbolRowFull {
 #[derive(Serialize)]
 struct DefinitionResult {
     file: String,
-    signature: String,
-    range: (usize, usize),
+    line: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     truncated: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -39,22 +33,21 @@ struct DefinitionResult {
 
 // --- Query implementations ---
 
-struct SymbolRow {
-    file: PathBuf,
-    symbol: Symbol,
+struct SymbolRow<'a> {
+    file: &'a Path,
+    symbol: &'a Symbol,
 }
 
 /// Execute the symbols query with optional file, name glob, and kind filters.
-/// If `single_file` is true, omits the file column from output (used by overview).
+/// When scoped to a single file, omits the file column from output.
 pub fn symbols(
     index: &Index,
     file: Option<&Path>,
     name_glob: Option<&str>,
     kind_filter: Option<SymbolKind>,
-    single_file: bool,
     json: bool,
 ) -> i32 {
-    let mut rows: Vec<SymbolRow> = Vec::new();
+    let mut rows: Vec<SymbolRow<'_>> = Vec::new();
 
     let rel_path = file.map(|f| make_relative(f, &index.root));
 
@@ -84,40 +77,30 @@ pub fn symbols(
                 }
 
             rows.push(SymbolRow {
-                file: path.clone(),
-                symbol: sym.clone(),
+                file: path,
+                symbol: sym,
             });
         }
     }
 
     if rows.is_empty() {
+        eprintln!("cx: no matches");
         return 2;
     }
 
     rows.sort_by(|a, b| a.file.cmp(&b.file).then(a.symbol.name.cmp(&b.symbol.name)));
 
-    if single_file {
-        let out: Vec<SymbolRowSingle> = rows
-            .iter()
-            .map(|r| SymbolRowSingle {
-                name: r.symbol.name.clone(),
-                kind: r.symbol.kind.as_str().to_string(),
-                signature: r.symbol.signature.clone(),
-            })
-            .collect();
-        if json { print_json(&out) } else { print_toon(&out) }
-    } else {
-        let out: Vec<SymbolRowFull> = rows
-            .iter()
-            .map(|r| SymbolRowFull {
-                file: r.file.display().to_string(),
-                name: r.symbol.name.clone(),
-                kind: r.symbol.kind.as_str().to_string(),
-                signature: r.symbol.signature.clone(),
-            })
-            .collect();
-        if json { print_json(&out) } else { print_toon(&out) }
-    }
+    let single_file = file.is_some();
+    let out: Vec<SymbolRowOut> = rows
+        .into_iter()
+        .map(|r| SymbolRowOut {
+            file: if single_file { None } else { Some(r.file.display().to_string()) },
+            name: r.symbol.name.clone(),
+            kind: r.symbol.kind.as_str().to_string(),
+            signature: r.symbol.signature.clone(),
+        })
+        .collect();
+    if json { print_json(&out) } else { print_toon(&out) }
 
     0
 }
@@ -127,6 +110,7 @@ pub fn definition(
     index: &Index,
     name: &str,
     from: Option<&Path>,
+    kind_filter: Option<SymbolKind>,
     max_lines: usize,
     json: bool,
 ) -> i32 {
@@ -136,6 +120,10 @@ pub fn definition(
     for (path, syms) in &index.exports {
         for sym in syms {
             if sym.name == name {
+                if let Some(kind) = kind_filter
+                    && sym.kind != kind {
+                        continue;
+                    }
                 matches.push((path, sym));
             }
         }
@@ -153,13 +141,15 @@ pub fn definition(
     }
 
     if matches.is_empty() {
+        eprintln!("cx: no matches");
         return 2;
     }
 
     let results: Vec<DefinitionResult> = matches
         .iter()
         .map(|(path, sym)| {
-            let body = read_body(&index.root, path, sym.byte_range).unwrap_or_default();
+            let (body, start_line) = read_body(&index.root, path, sym.byte_range)
+                .unwrap_or((String::new(), 0));
             let line_count = body.lines().count();
             let truncated = line_count > max_lines;
 
@@ -174,8 +164,7 @@ pub fn definition(
 
             DefinitionResult {
                 file: path.display().to_string(),
-                signature: sym.signature.clone(),
-                range: sym.byte_range,
+                line: start_line,
                 truncated: if truncated { Some(true) } else { None },
                 lines: if truncated { Some(line_count) } else { None },
                 body: display_body,
@@ -186,7 +175,16 @@ pub fn definition(
     if json {
         print_json(&results);
     } else {
-        print_toon(&results);
+        for (i, r) in results.iter().enumerate() {
+            if i > 0 {
+                println!();
+            }
+            print!("file: {}\nline: {}", r.file, r.line);
+            if let Some(total) = r.lines {
+                print!("\ntruncated: {} lines total", total);
+            }
+            println!("\n---\n{}", r.body);
+        }
     }
 
     0
@@ -196,6 +194,7 @@ pub fn definition(
 struct ReferenceRow {
     file: String,
     line: usize,
+    kind: String,
     context: String,
 }
 
@@ -232,7 +231,7 @@ pub fn references(
         };
 
         // Skip files that can't possibly contain the name
-        if !contains_bytes(&source, name_bytes) {
+        if memmem::find(&source, name_bytes).is_none() {
             continue;
         }
 
@@ -253,35 +252,35 @@ pub fn references(
             rows.push(ReferenceRow {
                 file: path.display().to_string(),
                 line: r.line,
+                kind: r.parent_kind,
                 context,
             });
         }
     }
 
     if rows.is_empty() {
+        eprintln!("cx: no matches");
         return 2;
     }
 
     rows.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
+    rows.dedup_by(|a, b| a.file == b.file && a.line == b.line);
 
     if json { print_json(&rows) } else { print_toon(&rows) }
 
     0
 }
 
-/// Fast substring check on raw bytes — skips files that can't contain the symbol.
-fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack.windows(needle.len()).any(|w| w == needle)
-}
-
-fn read_body(root: &Path, file: &Path, byte_range: (usize, usize)) -> Option<String> {
+fn read_body(root: &Path, file: &Path, byte_range: (usize, usize)) -> Option<(String, usize)> {
     let abs_path = root.join(file);
     let source = fs::read(&abs_path).ok()?;
     let (start, end) = byte_range;
     if end > source.len() {
         return None;
     }
-    Some(String::from_utf8_lossy(&source[start..end]).to_string())
+    let line = source[..start].iter().filter(|&&b| b == b'\n').count() + 1;
+    let body = String::from_utf8_lossy(&source[start..end]).to_string();
+    Some((body, line))
 }
 
 /// Make a path relative to the project root if it's absolute,

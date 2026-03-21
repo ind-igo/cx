@@ -395,6 +395,7 @@ dependencies = [
  "bincode",
  "clap",
  "ignore",
+ "memchr",
  "redb",
  "serde",
  "serde_json",

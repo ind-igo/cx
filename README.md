@@ -80,29 +80,40 @@ Public/exported symbols are identifiable from their signatures (e.g. `pub fn` in
 ### Definition -- get a function body without reading the file
 
 ```
-$ cx definition --name load_or_build
+$ cx definition --name resolve_root
 
-file: src/index.rs
-signature: pub fn load_or_build(root: &Path) -> Self
-range: [3412,4102]
-body: ...
+file: src/main.rs
+line: 76
+---
+fn resolve_root(project: Option<PathBuf>) -> PathBuf {
+    match project {
+        Some(p) => p,
+        None => {
+            let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            util::git::find_project_root(&cwd)
+        }
+    }
+}
 ```
 
-Use `--from src/foo.rs` to disambiguate when multiple files define the same name. `--max-lines` (default 200) truncates large bodies.
+Use `--from src/foo.rs` to disambiguate when multiple files define the same name. `--kind fn` filters by symbol kind. `--max-lines` (default 200) truncates large bodies.
 
 ### References -- find all usages of a symbol
 
 ```
 $ cx references --name Symbol
 
-[18]{file,line,context}:
-  src/index.rs,23,"pub exports: HashMap<PathBuf, Vec<Symbol>>,"
-  src/index.rs,33,"pub struct Symbol {"
-  src/query.rs,6,"use crate::index::{Index, Symbol, SymbolKind};"
+[17]{file,line,kind,context}:
+  src/index.rs,23,type_arguments,"pub exports: HashMap<PathBuf, Vec<Symbol>>,"
+  src/index.rs,33,struct_item,"pub struct Symbol {"
+  src/language/mod.rs,1,use_list,"use crate::index::{Language, Symbol, SymbolKind};"
+  src/query.rs,43,field_declaration,"symbol: Symbol,"
   ...
 ```
 
-Use `--file src/index.rs` to scope the search to a single file. Includes both definition and usage sites.
+The `kind` column shows the tree-sitter parent node type, indicating how the symbol is used (e.g. `struct_item` = definition, `use_list` = import, `type_arguments` = type reference).
+
+Use `--file src/index.rs` to scope the search to a single file. Includes both definition and usage sites. Duplicate references on the same line are collapsed.
 
 References are computed on-the-fly via AST walking (not indexed), so results are always fresh.
 
@@ -120,7 +131,7 @@ On first invocation, cx builds an index (`.cx-index.db`) by parsing all source f
 
 ## Output format
 
-Default output is [TOON](https://toonformat.dev) -- a token-efficient structured format. Use `--json` for JSON.
+Overview, symbols, and references use [TOON](https://toonformat.dev) -- a token-efficient structured format. Definition uses a plain-text format (metadata header + raw code body) for readability. Use `--json` for JSON on any command.
 
 ## Adding a language
 

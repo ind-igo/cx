@@ -55,6 +55,9 @@ enum Commands {
         /// Disambiguate by source file
         #[arg(long)]
         from: Option<PathBuf>,
+        /// Filter by symbol kind (fn, struct, enum, trait, type, const, class, interface, method, module, event)
+        #[arg(long)]
+        kind: Option<String>,
         /// Max lines for body output (default 200)
         #[arg(long, default_value = "200")]
         max_lines: usize,
@@ -90,16 +93,17 @@ fn main() {
     let exit_code = match cli.command {
         Commands::Overview { file } => {
             let idx = index::Index::load_or_build(&root);
-            query::symbols(&idx, Some(&file), None, None, true, cli.json)
+            query::symbols(&idx, Some(&file), None, None, cli.json)
         }
         Commands::Symbols { file, name, kind } => {
             let idx = index::Index::load_or_build(&root);
             let kind_filter = kind.as_deref().and_then(index::SymbolKind::from_str);
-            query::symbols(&idx, file.as_deref(), name.as_deref(), kind_filter, file.is_some(), cli.json)
+            query::symbols(&idx, file.as_deref(), name.as_deref(), kind_filter, cli.json)
         }
-        Commands::Definition { name, from, max_lines } => {
+        Commands::Definition { name, from, kind, max_lines } => {
             let idx = index::Index::load_or_build(&root);
-            query::definition(&idx, &name, from.as_deref(), max_lines, cli.json)
+            let kind_filter = kind.as_deref().and_then(index::SymbolKind::from_str);
+            query::definition(&idx, &name, from.as_deref(), kind_filter, max_lines, cli.json)
         }
         Commands::References { name, file } => {
             let idx = index::Index::load_or_build(&root);

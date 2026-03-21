@@ -463,24 +463,24 @@ pub fn detect_language(path: &Path) -> Option<Language> {
 
 pub struct Reference {
     pub line: usize, // 1-based
+    pub parent_kind: String,
+}
+
+/// Look up config, create parser, and parse source into a tree.
+fn parse_source<'a>(lang: Language, source: &[u8], path: &Path) -> Option<(&'a LanguageConfig, tree_sitter::Tree)> {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let config = LANGUAGES.iter().find(|c| c.language == lang)?;
+    let ts_lang = (config.grammar)(ext);
+    let mut parser = Parser::new();
+    parser.set_language(&ts_lang).ok()?;
+    let tree = parser.parse(source, None)?;
+    Some((config, tree))
 }
 
 /// Parse source and find all identifier nodes whose text matches `name`.
 pub fn find_references(lang: Language, source: &[u8], path: &Path, name: &str) -> Vec<Reference> {
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let config = match LANGUAGES.iter().find(|c| c.language == lang) {
-        Some(c) => c,
-        None => return Vec::new(),
-    };
-
-    let ts_lang = (config.grammar)(ext);
-    let mut parser = Parser::new();
-    if parser.set_language(&ts_lang).is_err() {
-        return Vec::new();
-    }
-
-    let tree = match parser.parse(source, None) {
-        Some(t) => t,
+    let (config, tree) = match parse_source(lang, source, path) {
+        Some(r) => r,
         None => return Vec::new(),
     };
 
@@ -491,8 +491,13 @@ pub fn find_references(lang: Language, source: &[u8], path: &Path, name: &str) -
             && config.ref_node_types.contains(&node.kind())
             && node.utf8_text(source).ok() == Some(name)
         {
+            let parent_kind = node
+                .parent()
+                .map(|p| p.kind().to_string())
+                .unwrap_or_default();
             refs.push(Reference {
                 line: node.start_position().row + 1,
+                parent_kind,
             });
         }
         for i in (0..node.child_count()).rev() {
@@ -508,23 +513,12 @@ pub fn find_references(lang: Language, source: &[u8], path: &Path, name: &str) -
 /// Parse a file and extract symbols for the given language.
 /// `path` is used to distinguish .tsx from .ts for grammar selection.
 pub fn parse_and_extract(lang: Language, source: &[u8], path: &Path) -> Vec<Symbol> {
+    let (config, tree) = match parse_source(lang, source, path) {
+        Some(r) => r,
+        None => return Vec::new(),
+    };
+
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let config = match LANGUAGES.iter().find(|c| c.language == lang) {
-        Some(c) => c,
-        None => return Vec::new(),
-    };
-
-    let ts_lang = (config.grammar)(ext);
-    let mut parser = Parser::new();
-    if parser.set_language(&ts_lang).is_err() {
-        return Vec::new();
-    }
-
-    let tree = match parser.parse(source, None) {
-        Some(t) => t,
-        None => return Vec::new(),
-    };
-
     let variant = match (config.language, ext) {
         (Language::TypeScript, "tsx" | "jsx") => 1u8,
         _ => 0u8,
@@ -532,7 +526,7 @@ pub fn parse_and_extract(lang: Language, source: &[u8], path: &Path) -> Vec<Symb
 
     let mut cache = QUERY_CACHE.lock().unwrap();
     let query = cache.entry((config.language as u8, variant)).or_insert_with(|| {
-        Query::new(&ts_lang, (config.query)()).expect("query compilation failed")
+        Query::new(&tree.language(), (config.query)()).expect("query compilation failed")
     });
 
     extract_symbols(config, query, &tree, source)

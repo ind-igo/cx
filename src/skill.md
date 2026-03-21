@@ -8,7 +8,7 @@ When `cx` is available in the project, prefer it over reading files directly.
 - **Find symbols across the project** → `cx symbols [--kind K] [--name GLOB] [--file PATH]`
 - **Read a specific function/type** → `cx definition --name <name>` (~500 tokens)
 - **Find all usages of a symbol** → `cx references --name <name>` before refactoring or tracing impact
-- **Fall back to Read tool** only when you need the full file or line-number precision
+- **Fall back to Read tool** only when you need the full file or surrounding context beyond the symbol body
 
 ## When to use cx instead of Read
 
@@ -21,10 +21,10 @@ When `cx` is available in the project, prefer it over reading files directly.
 ## Quick reference
 
 ```
-cx overview PATH                        file table of contents
-cx symbols [--kind K] [--name GLOB]     search symbols project-wide
-cx definition --name NAME [--from PATH] get a function/type body
-cx references --name NAME [--file PATH] find all usages of a symbol
+cx overview PATH                                    file table of contents
+cx symbols [--kind K] [--name GLOB] [--file PATH]   search symbols project-wide
+cx definition --name NAME [--from PATH] [--kind K]  get a function/type body
+cx references --name NAME [--file PATH]              find all usages of a symbol
 ```
 
 Short aliases: `cx o`, `cx s`, `cx d`, `cx r`

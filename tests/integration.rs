@@ -54,8 +54,8 @@ fn definition_main() {
     let out = cx().args(["definition", "--name", "main"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success());
-    assert!(stdout.contains("file: src/main.rs"), "{stdout}");
-    assert!(stdout.contains("signature: fn main()"), "{stdout}");
+    assert!(stdout.contains("src/main.rs"), "{stdout}");
+    assert!(stdout.contains("fn main()"), "{stdout}");
     assert!(stdout.contains("Cli::parse()"), "{stdout}");
 }
 
@@ -154,7 +154,6 @@ fn json_definition_has_expected_fields() {
     let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     let item = &parsed.as_array().unwrap()[0];
     assert!(item["file"].is_string());
-    assert!(item["signature"].is_string());
-    assert!(item["range"].is_array());
+    assert!(item["line"].is_number());
     assert!(item["body"].is_string());
 }
