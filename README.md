@@ -2,7 +2,6 @@
 
 Semantic code explorer for AI agents. The three LSP features they actually use — symbols, definitions, and references — without running a language server.
 
-> **Alpha software.** This is a work in progress — expect breaking changes. Built with AI assistance (Claude).
 
 ## Install
 
