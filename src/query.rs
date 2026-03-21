@@ -5,7 +5,7 @@ use memchr::memmem;
 use serde::Serialize;
 
 use crate::index::{FileData, Index, Symbol, SymbolKind};
-use crate::language;
+use crate::language::{self, detect_language};
 use crate::output::{print_toon, print_json};
 use crate::util::glob::glob_match;
 
@@ -53,7 +53,13 @@ pub fn symbols(
 
     if let Some(ref rel) = rel_path
         && !index.entries.contains_key(rel) {
-            eprintln!("cx: file not in index: {}", rel.display());
+            let abs = index.root.join(rel);
+            if abs.exists() && detect_language(&abs).is_none() {
+                let ext = abs.extension().and_then(|e| e.to_str()).unwrap_or("(none)");
+                eprintln!("cx: unsupported file type: .{}", ext);
+            } else {
+                eprintln!("cx: file not in index: {}", rel.display());
+            }
             return 1;
         }
 
@@ -212,7 +218,13 @@ pub fn references(
             match index.entries.get_key_value(rel) {
                 Some(kv) => vec![kv],
                 None => {
-                    eprintln!("cx: file not in index: {}", rel.display());
+                    let abs = index.root.join(rel);
+                    if abs.exists() && detect_language(&abs).is_none() {
+                        let ext = abs.extension().and_then(|e| e.to_str()).unwrap_or("(none)");
+                        eprintln!("cx: unsupported file type: .{}", ext);
+                    } else {
+                        eprintln!("cx: file not in index: {}", rel.display());
+                    }
                     return 1;
                 }
             }

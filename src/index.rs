@@ -128,12 +128,10 @@ fn language_to_u8(lang: Language) -> u8 {
 
 /// Returns None for unknown language discriminants, triggering a re-index.
 fn u8_to_language(b: u8) -> Option<Language> {
-    if b <= Language::Elixir as u8 {
-        // SAFETY: Language is #[repr(u8)] and b is within the valid discriminant range.
-        Some(unsafe { std::mem::transmute::<u8, Language>(b) })
-    } else {
-        None
-    }
+    use Language::*;
+    [Rust, TypeScript, Python, Go, C, Cpp, Java, Ruby, CSharp, Lua, Zig, Bash, Solidity, Elixir]
+        .get(b as usize)
+        .copied()
 }
 
 /// Open the database, retrying on lock contention (DatabaseAlreadyOpen).
