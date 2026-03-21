@@ -145,6 +145,93 @@ fn definition_max_lines_truncates() {
     assert!(item["lines"].as_u64().unwrap() > 200, "should report total lines: {stdout}");
 }
 
+// --- Version ---
+
+#[test]
+fn version_flag() {
+    let out = cx().arg("--version").output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.starts_with("cx "), "should print version: {stdout}");
+}
+
+// --- Error messages ---
+
+#[test]
+fn unsupported_file_type_error() {
+    let dir = temp_project(&[
+        ("README.md", "# Hello\n"),
+        ("src/main.rs", "fn main() {}\n"),
+    ]);
+    let out = cx_in(dir.path()).args(["overview", "README.md"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("unsupported file type: .md"), "should hint at unsupported type: {stderr}");
+}
+
+#[test]
+fn no_matches_stderr() {
+    let out = cx().args(["definition", "--name", "zzz_nonexistent"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("no matches"), "should print no matches: {stderr}");
+}
+
+// --- Definition --kind filter ---
+
+#[test]
+fn definition_kind_filter() {
+    let dir = temp_project(&[
+        ("src/lib.rs", "pub struct Foo;\npub fn Foo() {}\n"),
+    ]);
+    let out = cx_in(dir.path())
+        .args(["--json", "definition", "--name", "Foo", "--kind", "fn"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let arr = parsed.as_array().unwrap();
+    assert_eq!(arr.len(), 1, "should find only the fn, not the struct: {stdout}");
+    assert!(arr[0]["body"].as_str().unwrap().contains("fn Foo()"));
+}
+
+// --- References --file filter ---
+
+#[test]
+fn references_file_filter() {
+    let dir = temp_project(&[
+        ("src/a.rs", "pub struct Foo;\nfn use_foo(f: Foo) {}\n"),
+        ("src/b.rs", "use crate::Foo;\nfn bar(f: Foo) {}\n"),
+    ]);
+    let out = cx_in(dir.path())
+        .args(["references", "--name", "Foo", "--file", "src/a.rs"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    // Should only contain src/a.rs references, not src/b.rs
+    assert!(stdout.contains("src/a.rs"), "should find refs in a.rs: {stdout}");
+    assert!(!stdout.contains("src/b.rs"), "should not include b.rs: {stdout}");
+}
+
+// --- References dedup ---
+
+#[test]
+fn references_dedup_same_line() {
+    let dir = temp_project(&[
+        ("src/lib.rs", "fn convert(x: Foo) -> Foo { x }\npub struct Foo;\n"),
+    ]);
+    let out = cx_in(dir.path())
+        .args(["--json", "references", "--name", "Foo"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let arr = parsed.as_array().unwrap();
+    // Line 1 has Foo twice (param + return), should be deduped to one entry
+    let line1_refs: Vec<_> = arr.iter().filter(|r| r["line"] == 1).collect();
+    assert_eq!(line1_refs.len(), 1, "same-line refs should be deduped: {stdout}");
+}
+
 // --- JSON output for definition ---
 
 #[test]
