@@ -1,7 +1,8 @@
 # cx
 
-Semantic code explorer for AI agents. The three LSP features they actually use — symbols, definitions, and references — without running a language server.
+Semantic code navigation for AI agents — file overviews, symbol search, definitions, and references — without running a language server.
 
+> Disclaimer: Built with AI.
 
 ## Install
 
@@ -180,6 +181,6 @@ LanguageConfig {
 },
 ```
 
-**Writing queries:** Use `tree-sitter parse` or inspect `node-types.json` in the grammar crate to discover the AST structure. Capture `@name` for the symbol name and `@definition.<kind>` for the enclosing node. Supported kinds: `function`, `method`, `class`, `interface`, `type`, `enum`, `module`, `constant`, `event`, `macro`.
+**Writing queries:** Use `tree-sitter parse` or inspect `node-types.json` in the grammar crate to discover the AST structure. Capture `@name` for the symbol name and `@definition.<kind>` for the enclosing node. Supported kinds: `function`, `method`, `class`, `interface`, `type`, `enum`, `module`, `constant`, `event`.
 
 **Kind overrides:** When a language maps generic capture names to specific concepts (e.g., Rust's `definition.class` → `SymbolKind::Struct`), add entries to `kind_overrides`. These are checked before the default mapping.
