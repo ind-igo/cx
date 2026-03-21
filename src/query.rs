@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use memchr::memmem;
 use serde::Serialize;
 
-use crate::index::{Index, Symbol, SymbolKind};
+use crate::index::{FileData, Index, Symbol, SymbolKind};
 use crate::language;
 use crate::output::{print_toon, print_json};
 use crate::util::glob::glob_match;
@@ -52,20 +52,20 @@ pub fn symbols(
     let rel_path = file.map(|f| make_relative(f, &index.root));
 
     if let Some(ref rel) = rel_path
-        && !index.exports.contains_key(rel) {
+        && !index.entries.contains_key(rel) {
             eprintln!("cx: file not in index: {}", rel.display());
             return 1;
         }
 
-    let files_to_search: Vec<(&PathBuf, &Vec<Symbol>)> = match rel_path {
+    let files_to_search: Vec<(&PathBuf, &FileData)> = match rel_path {
         Some(ref rel) => {
-            index.exports.get_key_value(rel).into_iter().collect()
+            index.entries.get_key_value(rel).into_iter().collect()
         }
-        None => index.exports.iter().collect(),
+        None => index.entries.iter().collect(),
     };
 
-    for (path, syms) in files_to_search {
-        for sym in syms {
+    for (path, data) in files_to_search {
+        for sym in &data.symbols {
             if let Some(pattern) = name_glob
                 && !glob_match(pattern, &sym.name) {
                     continue;
@@ -117,8 +117,8 @@ pub fn definition(
     let from_rel = from.map(|f| make_relative(f, &index.root));
 
     let mut matches: Vec<(&PathBuf, &Symbol)> = Vec::new();
-    for (path, syms) in &index.exports {
-        for sym in syms {
+    for (path, data) in &index.entries {
+        for sym in &data.symbols {
             if sym.name == name {
                 if let Some(kind) = kind_filter
                     && sym.kind != kind {
@@ -207,23 +207,23 @@ pub fn references(
 ) -> i32 {
     let rel_path = file.map(|f| make_relative(f, &index.root));
 
-    let files_to_search: Vec<&PathBuf> = match rel_path {
+    let files_to_search: Vec<(&PathBuf, &FileData)> = match rel_path {
         Some(ref rel) => {
-            if index.files.contains_key(rel) {
-                vec![rel]
-            } else {
-                eprintln!("cx: file not in index: {}", rel.display());
-                return 1;
+            match index.entries.get_key_value(rel) {
+                Some(kv) => vec![kv],
+                None => {
+                    eprintln!("cx: file not in index: {}", rel.display());
+                    return 1;
+                }
             }
         }
-        None => index.files.keys().collect(),
+        None => index.entries.iter().collect(),
     };
 
     let mut rows: Vec<ReferenceRow> = Vec::new();
     let name_bytes = name.as_bytes();
 
-    for path in files_to_search {
-        let entry = &index.files[path];
+    for (path, data) in files_to_search {
         let abs_path = index.root.join(path);
         let source = match fs::read(&abs_path) {
             Ok(s) => s,
@@ -235,7 +235,7 @@ pub fn references(
             continue;
         }
 
-        let refs = language::find_references(entry.language, &source, &abs_path, name);
+        let refs = language::find_references(data.meta.language, &source, &abs_path, name);
         if refs.is_empty() {
             continue;
         }

@@ -19,8 +19,13 @@ pub struct Index {
     pub root: PathBuf,
     db: Database,
     /// In-memory mirror for fast query access.
-    pub files: HashMap<PathBuf, FileEntry>,
-    pub exports: HashMap<PathBuf, Vec<Symbol>>,
+    pub entries: HashMap<PathBuf, FileData>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FileData {
+    pub meta: FileEntry,
+    pub symbols: Vec<Symbol>,
 }
 
 #[derive(Debug, Clone)]
@@ -37,8 +42,9 @@ pub struct Symbol {
     pub byte_range: (usize, usize),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]
+#[clap(rename_all = "lowercase")]
 pub enum SymbolKind {
     Fn,
     Struct,
@@ -54,23 +60,6 @@ pub enum SymbolKind {
 }
 
 impl SymbolKind {
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "fn" => Some(Self::Fn),
-            "struct" => Some(Self::Struct),
-            "enum" => Some(Self::Enum),
-            "trait" => Some(Self::Trait),
-            "type" => Some(Self::Type),
-            "const" => Some(Self::Const),
-            "class" => Some(Self::Class),
-            "interface" => Some(Self::Interface),
-            "method" => Some(Self::Method),
-            "module" => Some(Self::Module),
-            "event" => Some(Self::Event),
-            _ => None,
-        }
-    }
-
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Fn => "fn",
@@ -197,8 +186,7 @@ impl Index {
             let mut idx = Index {
                 root: root.to_path_buf(),
                 db,
-                files: HashMap::new(),
-                exports: HashMap::new(),
+                entries: HashMap::new(),
             };
             idx.full_crawl();
             idx.save_all();
@@ -207,15 +195,14 @@ impl Index {
         }
 
         // Load from db into memory — skip entries with corrupt/unknown data
-        let mut files = HashMap::new();
-        let mut exports = HashMap::new();
+        let mut entries: HashMap<PathBuf, FileData> = HashMap::new();
 
         if let Ok(read_txn) = db.begin_read() {
             if let Ok(table) = read_txn.open_table(FILES_TABLE) {
                 for (key, val) in table.iter().into_iter().flatten().flatten() {
                     let path = PathBuf::from(key.value());
-                    if let Some(file_entry) = decode_file_entry(val.value()) {
-                        files.insert(path, file_entry);
+                    if let Some(meta) = decode_file_entry(val.value()) {
+                        entries.insert(path, FileData { meta, symbols: Vec::new() });
                     }
                 }
             }
@@ -223,12 +210,14 @@ impl Index {
                 for (key, val) in table.iter().into_iter().flatten().flatten() {
                     let path = PathBuf::from(key.value());
                     let syms: Vec<Symbol> = bincode::deserialize(val.value()).unwrap_or_default();
-                    exports.insert(path, syms);
+                    if let Some(data) = entries.get_mut(&path) {
+                        data.symbols = syms;
+                    }
                 }
             }
         }
 
-        let mut idx = Index { root: root.to_path_buf(), db, files, exports };
+        let mut idx = Index { root: root.to_path_buf(), db, entries };
         idx.incremental_update();
         idx
     }
@@ -252,11 +241,6 @@ impl Index {
                 .and_then(|m| m.modified().ok())
                 .unwrap_or(SystemTime::UNIX_EPOCH);
 
-            self.files.insert(
-                rel_path.clone(),
-                FileEntry { mtime, language: lang },
-            );
-
             let symbols = match fs::read(path) {
                 Ok(source) => parse_and_extract(lang, &source, path),
                 Err(e) => {
@@ -264,7 +248,10 @@ impl Index {
                     Vec::new()
                 }
             };
-            self.exports.insert(rel_path, symbols);
+            self.entries.insert(rel_path, FileData {
+                meta: FileEntry { mtime, language: lang },
+                symbols,
+            });
         }
     }
 
@@ -293,12 +280,11 @@ impl Index {
         }
 
         // Remove deleted files
-        let indexed_paths: Vec<PathBuf> = self.files.keys().cloned().collect();
+        let indexed_paths: Vec<PathBuf> = self.entries.keys().cloned().collect();
         let mut deleted = Vec::new();
         for path in indexed_paths {
             if !on_disk.contains_key(&path) {
-                self.files.remove(&path);
-                self.exports.remove(&path);
+                self.entries.remove(&path);
                 deleted.push(path);
             }
         }
@@ -306,20 +292,22 @@ impl Index {
         // Add new or update changed files
         let mut changed: Vec<(PathBuf, FileEntry, Vec<Symbol>)> = Vec::new();
         for (path, (mtime, lang)) in &on_disk {
-            match self.files.get(path) {
-                Some(entry) if entry.mtime == *mtime => {}
-                _ => {
-                    let file_entry = FileEntry { mtime: *mtime, language: *lang };
-                    self.files.insert(path.clone(), file_entry.clone());
-
-                    let abs_path = self.root.join(path);
-                    let symbols = match fs::read(&abs_path) {
-                        Ok(source) => parse_and_extract(*lang, &source, &abs_path),
-                        Err(_) => Vec::new(),
-                    };
-                    self.exports.insert(path.clone(), symbols.clone());
-                    changed.push((path.clone(), file_entry, symbols));
-                }
+            let needs_update = match self.entries.get(path) {
+                Some(data) if data.meta.mtime == *mtime => false,
+                _ => true,
+            };
+            if needs_update {
+                let file_entry = FileEntry { mtime: *mtime, language: *lang };
+                let abs_path = self.root.join(path);
+                let symbols = match fs::read(&abs_path) {
+                    Ok(source) => parse_and_extract(*lang, &source, &abs_path),
+                    Err(_) => Vec::new(),
+                };
+                self.entries.insert(path.clone(), FileData {
+                    meta: file_entry.clone(),
+                    symbols: symbols.clone(),
+                });
+                changed.push((path.clone(), file_entry, symbols));
             }
         }
 
@@ -386,28 +374,21 @@ impl Index {
             let _ = table.insert("version", INDEX_VERSION.to_le_bytes().as_slice());
         }
 
-        // Write files
+        // Write files and symbols
         {
-            let Ok(mut table) = write_txn.open_table(FILES_TABLE) else {
+            let Ok(mut files_table) = write_txn.open_table(FILES_TABLE) else {
                 eprintln!("cx: failed to open files table — rebuild with: rm .cx-index.db");
                 return;
             };
-            for (path, entry) in &self.files {
-                let key = path.to_string_lossy();
-                let _ = table.insert(key.as_ref(), encode_file_entry(entry).as_slice());
-            }
-        }
-
-        // Write symbols
-        {
-            let Ok(mut table) = write_txn.open_table(SYMBOLS_TABLE) else {
+            let Ok(mut syms_table) = write_txn.open_table(SYMBOLS_TABLE) else {
                 eprintln!("cx: failed to open symbols table — rebuild with: rm .cx-index.db");
                 return;
             };
-            for (path, symbols) in &self.exports {
+            for (path, data) in &self.entries {
                 let key = path.to_string_lossy();
-                match bincode::serialize(symbols) {
-                    Ok(sym_bytes) => { let _ = table.insert(key.as_ref(), sym_bytes.as_slice()); }
+                let _ = files_table.insert(key.as_ref(), encode_file_entry(&data.meta).as_slice());
+                match bincode::serialize(&data.symbols) {
+                    Ok(sym_bytes) => { let _ = syms_table.insert(key.as_ref(), sym_bytes.as_slice()); }
                     Err(e) => eprintln!("cx: failed to serialize symbols for {}: {}", key, e),
                 }
             }
@@ -545,13 +526,12 @@ mod tests {
         let mut idx = Index {
             root: cwd,
             db,
-            files: HashMap::new(),
-            exports: HashMap::new(),
+            entries: HashMap::new(),
         };
         idx.full_crawl();
 
-        assert!(idx.files.contains_key(&PathBuf::from("src/main.rs")));
-        for path in idx.files.keys() {
+        assert!(idx.entries.contains_key(&PathBuf::from("src/main.rs")));
+        for path in idx.entries.keys() {
             assert!(!path.starts_with("target/"), "found target/ file: {:?}", path);
         }
     }
@@ -590,10 +570,10 @@ mod tests {
             ("src/lib.rs", "pub fn hello() {}\n"),
         ]);
 
-        assert!(idx.files.contains_key(&PathBuf::from("src/main.rs")));
-        assert!(idx.files.contains_key(&PathBuf::from("src/lib.rs")));
-        assert_eq!(idx.exports.get(&PathBuf::from("src/main.rs")).unwrap().len(), 1);
-        assert_eq!(idx.exports.get(&PathBuf::from("src/lib.rs")).unwrap().len(), 1);
+        assert!(idx.entries.contains_key(&PathBuf::from("src/main.rs")));
+        assert!(idx.entries.contains_key(&PathBuf::from("src/lib.rs")));
+        assert_eq!(idx.entries.get(&PathBuf::from("src/main.rs")).unwrap().symbols.len(), 1);
+        assert_eq!(idx.entries.get(&PathBuf::from("src/lib.rs")).unwrap().symbols.len(), 1);
 
         // DB file should exist
         assert!(dir.path().join(DB_FILE).exists());
@@ -605,16 +585,16 @@ mod tests {
             ("src/main.rs", "fn main() {}\nfn helper() {}\n"),
         ]);
 
-        let file_count = idx.files.len();
-        let sym_count = idx.exports.get(&PathBuf::from("src/main.rs")).unwrap().len();
+        let file_count = idx.entries.len();
+        let sym_count = idx.entries.get(&PathBuf::from("src/main.rs")).unwrap().symbols.len();
         assert!(sym_count >= 2, "should have at least 2 symbols: {sym_count}");
 
         // Drop and reload — should get same data from redb
         drop(idx);
         let idx2 = Index::load_or_build(dir.path());
-        assert_eq!(idx2.files.len(), file_count);
+        assert_eq!(idx2.entries.len(), file_count);
         assert_eq!(
-            idx2.exports.get(&PathBuf::from("src/main.rs")).unwrap().len(),
+            idx2.entries.get(&PathBuf::from("src/main.rs")).unwrap().symbols.len(),
             sym_count,
         );
     }
@@ -629,20 +609,20 @@ mod tests {
 
         // Build index with both files
         let idx = Index::load_or_build(dir.path());
-        assert!(idx.files.contains_key(&PathBuf::from("src/a.rs")));
-        assert!(idx.files.contains_key(&PathBuf::from("src/b.rs")));
+        assert!(idx.entries.contains_key(&PathBuf::from("src/a.rs")));
+        assert!(idx.entries.contains_key(&PathBuf::from("src/b.rs")));
         drop(idx);
 
         // Remove b.rs, rebuild
         fs::remove_file(dir.path().join("src/b.rs")).unwrap();
         let idx2 = Index::load_or_build(dir.path());
-        assert!(idx2.files.contains_key(&PathBuf::from("src/a.rs")));
-        assert!(!idx2.files.contains_key(&PathBuf::from("src/b.rs")));
+        assert!(idx2.entries.contains_key(&PathBuf::from("src/a.rs")));
+        assert!(!idx2.entries.contains_key(&PathBuf::from("src/b.rs")));
 
         // Reload again — b.rs should still be gone from redb
         drop(idx2);
         let idx3 = Index::load_or_build(dir.path());
-        assert!(!idx3.files.contains_key(&PathBuf::from("src/b.rs")));
+        assert!(!idx3.entries.contains_key(&PathBuf::from("src/b.rs")));
     }
 
     #[test]
@@ -653,16 +633,16 @@ mod tests {
         fs::write(dir.path().join("src/a.rs"), "fn a() {}\n").unwrap();
 
         let idx = Index::load_or_build(dir.path());
-        assert_eq!(idx.files.len(), 1);
+        assert_eq!(idx.entries.len(), 1);
         drop(idx);
 
         // Add a new file
         fs::write(dir.path().join("src/b.rs"), "fn b() {}\n").unwrap();
 
         let idx2 = Index::load_or_build(dir.path());
-        assert_eq!(idx2.files.len(), 2);
-        assert!(idx2.files.contains_key(&PathBuf::from("src/b.rs")));
-        assert_eq!(idx2.exports.get(&PathBuf::from("src/b.rs")).unwrap().len(), 1);
+        assert_eq!(idx2.entries.len(), 2);
+        assert!(idx2.entries.contains_key(&PathBuf::from("src/b.rs")));
+        assert_eq!(idx2.entries.get(&PathBuf::from("src/b.rs")).unwrap().symbols.len(), 1);
     }
 
     #[test]
@@ -673,7 +653,7 @@ mod tests {
         fs::write(dir.path().join("src/a.rs"), "fn a() {}\n").unwrap();
 
         let idx = Index::load_or_build(dir.path());
-        assert_eq!(idx.exports.get(&PathBuf::from("src/a.rs")).unwrap().len(), 1);
+        assert_eq!(idx.entries.get(&PathBuf::from("src/a.rs")).unwrap().symbols.len(), 1);
         drop(idx);
 
         // Modify the file — add a second function
@@ -683,7 +663,7 @@ mod tests {
 
         let idx2 = Index::load_or_build(dir.path());
         assert_eq!(
-            idx2.exports.get(&PathBuf::from("src/a.rs")).unwrap().len(),
+            idx2.entries.get(&PathBuf::from("src/a.rs")).unwrap().symbols.len(),
             2,
             "should detect modified file and re-parse symbols"
         );
@@ -698,16 +678,16 @@ mod tests {
         fs::write(dir.path().join("src/b.rs"), "fn b() {}\n").unwrap();
 
         let idx = Index::load_or_build(dir.path());
-        assert_eq!(idx.files.len(), 2);
+        assert_eq!(idx.entries.len(), 2);
         drop(idx);
 
         // Delete one file
         fs::remove_file(dir.path().join("src/b.rs")).unwrap();
 
         let idx2 = Index::load_or_build(dir.path());
-        assert_eq!(idx2.files.len(), 1);
-        assert!(idx2.files.contains_key(&PathBuf::from("src/a.rs")));
-        assert!(!idx2.files.contains_key(&PathBuf::from("src/b.rs")));
+        assert_eq!(idx2.entries.len(), 1);
+        assert!(idx2.entries.contains_key(&PathBuf::from("src/a.rs")));
+        assert!(!idx2.entries.contains_key(&PathBuf::from("src/b.rs")));
     }
 
     #[test]
@@ -719,7 +699,7 @@ mod tests {
 
         // Build normally
         let idx = Index::load_or_build(dir.path());
-        assert!(idx.files.contains_key(&PathBuf::from("src/a.rs")));
+        assert!(idx.entries.contains_key(&PathBuf::from("src/a.rs")));
         drop(idx);
 
         // Corrupt the version in the db
@@ -736,7 +716,7 @@ mod tests {
 
         // Reload — should detect version mismatch and rebuild
         let idx2 = Index::load_or_build(dir.path());
-        assert!(idx2.files.contains_key(&PathBuf::from("src/a.rs")));
+        assert!(idx2.entries.contains_key(&PathBuf::from("src/a.rs")));
     }
 
     #[test]
@@ -745,14 +725,14 @@ mod tests {
             ("src/main.rs", "pub fn foo(x: i32) -> bool { true }\nstruct Bar;\n"),
         ]);
 
-        let syms = idx.exports.get(&PathBuf::from("src/main.rs")).unwrap();
+        let syms = &idx.entries.get(&PathBuf::from("src/main.rs")).unwrap().symbols;
         assert!(syms.iter().any(|s| s.name == "foo" && s.kind == SymbolKind::Fn));
         assert!(syms.iter().any(|s| s.name == "Bar" && s.kind == SymbolKind::Struct));
         drop(idx);
 
         // Reload and verify symbols survive the roundtrip through redb + bincode
         let idx2 = Index::load_or_build(dir.path());
-        let syms2 = idx2.exports.get(&PathBuf::from("src/main.rs")).unwrap();
+        let syms2 = &idx2.entries.get(&PathBuf::from("src/main.rs")).unwrap().symbols;
         assert!(syms2.iter().any(|s| s.name == "foo" && s.kind == SymbolKind::Fn));
         assert!(syms2.iter().any(|s| s.name == "Bar" && s.kind == SymbolKind::Struct));
     }

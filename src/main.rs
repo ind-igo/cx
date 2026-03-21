@@ -42,9 +42,9 @@ enum Commands {
         /// Glob pattern to match symbol names
         #[arg(long)]
         name: Option<String>,
-        /// Filter by symbol kind (fn, struct, enum, trait, type, const, class, interface, method, module, event)
+        /// Filter by symbol kind
         #[arg(long)]
-        kind: Option<String>,
+        kind: Option<index::SymbolKind>,
     },
     /// Get a function/type body without reading the whole file
     #[command(alias = "d")]
@@ -55,9 +55,9 @@ enum Commands {
         /// Disambiguate by source file
         #[arg(long)]
         from: Option<PathBuf>,
-        /// Filter by symbol kind (fn, struct, enum, trait, type, const, class, interface, method, module, event)
+        /// Filter by symbol kind
         #[arg(long)]
-        kind: Option<String>,
+        kind: Option<index::SymbolKind>,
         /// Max lines for body output (default 200)
         #[arg(long, default_value = "200")]
         max_lines: usize,
@@ -97,13 +97,11 @@ fn main() {
         }
         Commands::Symbols { file, name, kind } => {
             let idx = index::Index::load_or_build(&root);
-            let kind_filter = kind.as_deref().and_then(index::SymbolKind::from_str);
-            query::symbols(&idx, file.as_deref(), name.as_deref(), kind_filter, cli.json)
+            query::symbols(&idx, file.as_deref(), name.as_deref(), kind, cli.json)
         }
         Commands::Definition { name, from, kind, max_lines } => {
             let idx = index::Index::load_or_build(&root);
-            let kind_filter = kind.as_deref().and_then(index::SymbolKind::from_str);
-            query::definition(&idx, &name, from.as_deref(), kind_filter, max_lines, cli.json)
+            query::definition(&idx, &name, from.as_deref(), kind, max_lines, cli.json)
         }
         Commands::References { name, file } => {
             let idx = index::Index::load_or_build(&root);
