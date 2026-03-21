@@ -1,6 +1,6 @@
 # cx
 
-Semantic code navigation for AI agents. The three LSP features they actually use — symbols, definitions, and references — without running a language server. One binary.
+Semantic code explorer for AI agents. The three LSP features they actually use — symbols, definitions, and references — without running a language server.
 
 > **Alpha software.** This is a work in progress — expect breaking changes. Built with AI assistance (Claude).
 
@@ -45,7 +45,7 @@ cx references --name calc     ~1 query      "where is this used?"
 
 Benchmarked on real agent workflows, cx reduces token consumption by **15-80%** depending on the task, with the biggest savings on targeted lookups and chain reads.
 
-**Why not an LSP?** Language servers are built for editors — persistent processes, 1-2GB RAM, per-language setup. Agents need batch queries between tool calls, not keystroke-level reactivity. cx optimizes for that access pattern.
+**Why not an LSP?** Language servers are built for editors — persistent processes, 1-2GB RAM, per-language setup, and used by humans. Agents only need the ability to query the structure of their codebase. cx optimizes for that access pattern.
 
 ## Usage
 
