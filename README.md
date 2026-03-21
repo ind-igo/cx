@@ -27,23 +27,22 @@ That's it. The prompt includes the command reference and the escalation hierarch
 
 ## Why
 
-In our usage, agents spend ~74% of their context budget reading files. Most of those reads are wasteful:
+Agents burn most of their context reading files. We analyzed 105 of our own Claude Code sessions (73 pre-cx, 32 post-cx) and found:
 
-- **~62% aren't followed by edits** -- the agent just needs to know what's in a file
-- **~46% are chain reads** -- reading A to find B to find C, averaging 3.5 files deep
-- **~33% are re-reads** -- same file read multiple times per session
-
-These numbers are from our own analysis of agent sessions, not published benchmarks. Your mileage may vary, but the pattern is consistent: agents read far more than they need to.
+- **66% of reads are chains** -- reading A to find B to find C, exploring before acting
+- **37% are re-reads** -- same file read multiple times per session
+- **Avg Read costs ~1,200 tokens** (median 594), and sessions average 21 reads
 
 cx gives agents a cost ladder. Start cheap, escalate only when needed:
 
 ```
 cx overview src/fees.rs       ~200 tokens   "what's in this file?"
-cx definition --name calc     ~500 tokens   "show me this function"
+cx definition --name calc     ~200 tokens   "show me this function"
+cx symbols --kind fn          ~70 tokens    "what functions exist in the codebase?"
 cx references --name calc     ~1 query      "where is this used?"
 ```
 
-Benchmarked on real agent workflows, cx reduces token consumption by **15-80%** depending on the task, with the biggest savings on targeted lookups and chain reads.
+In sessions with cx enabled, we measured **58% fewer Read calls** and **40-55% fewer tokens** spent on code navigation. The biggest wins are on chain reads and targeted lookups where `cx overview` or `cx definition` replaces a full file read.
 
 **Why not an LSP?** Language servers are built for editors — persistent processes, 1-2GB RAM, per-language setup, and used by humans. Agents only need the ability to query the structure of their codebase. cx optimizes for that access pattern.
 
