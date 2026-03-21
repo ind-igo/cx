@@ -524,7 +524,7 @@ pub fn parse_and_extract(lang: Language, source: &[u8], path: &Path) -> Vec<Symb
         _ => 0u8,
     };
 
-    let mut cache = QUERY_CACHE.lock().unwrap();
+    let mut cache = QUERY_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     let query = cache.entry((config.language as u8, variant)).or_insert_with(|| {
         Query::new(&tree.language(), (config.query)()).expect("query compilation failed")
     });

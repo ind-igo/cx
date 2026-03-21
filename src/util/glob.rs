@@ -1,24 +1,36 @@
 /// Simple glob matching: `*` matches any substring, `?` matches one character.
-/// Case-sensitive.
+/// Case-sensitive. Uses an iterative algorithm (O(n*m), no exponential backtracking).
 pub fn glob_match(pattern: &str, text: &str) -> bool {
     let pat: Vec<char> = pattern.chars().collect();
     let txt: Vec<char> = text.chars().collect();
-    glob_recurse(&pat, &txt)
-}
 
-fn glob_recurse(pat: &[char], txt: &[char]) -> bool {
-    match (pat.first(), txt.first()) {
-        (None, None) => true,
-        (Some('*'), _) => {
-            // '*' matches zero or more characters
-            // Try matching rest of pattern against current position (zero match)
-            // or advance text by one and retry (consume one char)
-            glob_recurse(&pat[1..], txt) || (!txt.is_empty() && glob_recurse(pat, &txt[1..]))
+    let (mut pi, mut ti) = (0, 0);
+    let (mut star_pi, mut star_ti) = (usize::MAX, 0);
+
+    while ti < txt.len() {
+        if pi < pat.len() && (pat[pi] == '?' || pat[pi] == txt[ti]) {
+            pi += 1;
+            ti += 1;
+        } else if pi < pat.len() && pat[pi] == '*' {
+            star_pi = pi;
+            star_ti = ti;
+            pi += 1; // try matching * with zero chars
+        } else if star_pi != usize::MAX {
+            // backtrack: let the last * consume one more char
+            pi = star_pi + 1;
+            star_ti += 1;
+            ti = star_ti;
+        } else {
+            return false;
         }
-        (Some('?'), Some(_)) => glob_recurse(&pat[1..], &txt[1..]),
-        (Some(p), Some(t)) if *p == *t => glob_recurse(&pat[1..], &txt[1..]),
-        _ => false,
     }
+
+    // consume trailing *s
+    while pi < pat.len() && pat[pi] == '*' {
+        pi += 1;
+    }
+
+    pi == pat.len()
 }
 
 #[cfg(test)]
@@ -79,5 +91,12 @@ mod tests {
     #[test]
     fn test_case_sensitive() {
         assert!(!glob_match("Foo", "foo"));
+    }
+
+    #[test]
+    fn test_adversarial_pattern() {
+        // This would hang with recursive backtracking
+        let text = "a".repeat(100);
+        assert!(!glob_match("*a*a*a*a*a*b", &text));
     }
 }

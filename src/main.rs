@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::process;
 
 #[derive(Parser)]
-#[command(name = "cx", about = "Semantic code navigation for AI agents")]
+#[command(name = "cx", version, about = "Semantic code navigation for AI agents")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
