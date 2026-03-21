@@ -292,10 +292,7 @@ impl Index {
         // Add new or update changed files
         let mut changed: Vec<(PathBuf, FileEntry, Vec<Symbol>)> = Vec::new();
         for (path, (mtime, lang)) in &on_disk {
-            let needs_update = match self.entries.get(path) {
-                Some(data) if data.meta.mtime == *mtime => false,
-                _ => true,
-            };
+            let needs_update = !matches!(self.entries.get(path), Some(data) if data.meta.mtime == *mtime);
             if needs_update {
                 let file_entry = FileEntry { mtime: *mtime, language: *lang };
                 let abs_path = self.root.join(path);

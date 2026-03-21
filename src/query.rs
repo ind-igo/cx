@@ -88,7 +88,7 @@ pub fn symbols(
         return 2;
     }
 
-    rows.sort_by(|a, b| a.file.cmp(&b.file).then(a.symbol.name.cmp(&b.symbol.name)));
+    rows.sort_by(|a, b| a.file.cmp(b.file).then(a.symbol.name.cmp(&b.symbol.name)));
 
     let single_file = file.is_some();
     let out: Vec<SymbolRowOut> = rows
