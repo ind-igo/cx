@@ -1,5 +1,5 @@
 use ignore::WalkBuilder;
-use redb::{Database, ReadableTable, TableDefinition};
+use redb::{Database, ReadOnlyDatabase, ReadableDatabase, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::language::{detect_language, parse_and_extract};
 
-pub const INDEX_VERSION: u32 = 2;
+pub const INDEX_VERSION: u32 = 3;
 const DB_FILE: &str = ".cx-index.db";
 
 const META_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("meta");
@@ -17,7 +17,7 @@ const SYMBOLS_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("symbol
 
 pub struct Index {
     pub root: PathBuf,
-    db: Database,
+    db: Option<Database>,
     /// In-memory mirror for fast query access.
     pub entries: HashMap<PathBuf, FileData>,
 }
@@ -134,8 +134,8 @@ fn u8_to_language(b: u8) -> Option<Language> {
         .copied()
 }
 
-/// Open the database, retrying on lock contention (DatabaseAlreadyOpen).
-fn open_db(path: &Path) -> Result<Database, redb::DatabaseError> {
+/// Open the database exclusively, retrying on lock contention.
+fn open_db_exclusive(path: &Path) -> Result<Database, redb::DatabaseError> {
     let mut attempts = 0;
     loop {
         match Database::create(path) {
@@ -152,72 +152,140 @@ fn open_db(path: &Path) -> Result<Database, redb::DatabaseError> {
     }
 }
 
+/// Load entries from a readable database into memory.
+fn load_entries(db: &impl ReadableDatabase) -> Option<HashMap<PathBuf, FileData>> {
+    let read_txn = db.begin_read().ok()?;
+
+    // Check version
+    let version_ok = (|| -> Option<bool> {
+        let table = read_txn.open_table(META_TABLE).ok()?;
+        let val = table.get("version").ok()??;
+        let bytes = val.value();
+        if bytes.len() == 4 {
+            Some(u32::from_le_bytes(bytes.try_into().unwrap()) == INDEX_VERSION)
+        } else {
+            None
+        }
+    })().unwrap_or(false);
+
+    if !version_ok {
+        return None;
+    }
+
+    let mut entries: HashMap<PathBuf, FileData> = HashMap::new();
+
+    if let Ok(table) = read_txn.open_table(FILES_TABLE) {
+        for item in table.iter().into_iter().flatten() {
+            let Ok((key, val)) = item else { continue };
+            let path = PathBuf::from(key.value());
+            if let Some(meta) = decode_file_entry(val.value()) {
+                entries.insert(path, FileData { meta, symbols: Vec::new() });
+            }
+        }
+    }
+    if let Ok(table) = read_txn.open_table(SYMBOLS_TABLE) {
+        for item in table.iter().into_iter().flatten() {
+            let Ok((key, val)) = item else { continue };
+            let path = PathBuf::from(key.value());
+            let syms: Vec<Symbol> = bincode::deserialize(val.value()).unwrap_or_default();
+            if let Some(data) = entries.get_mut(&path) {
+                data.symbols = syms;
+            }
+        }
+    }
+
+    Some(entries)
+}
+
+/// Check if any files on disk have changed compared to indexed entries.
+fn needs_update(root: &Path, entries: &HashMap<PathBuf, FileData>) -> bool {
+    let mut on_disk_count = 0usize;
+    for entry in walk(root) {
+        let path = entry.path();
+        if detect_language(path).is_none() {
+            continue;
+        }
+        let rel_path = match path.strip_prefix(root) {
+            Ok(p) => p.to_path_buf(),
+            Err(_) => continue,
+        };
+        on_disk_count += 1;
+        let mtime = entry.metadata().ok()
+            .and_then(|m| m.modified().ok())
+            .unwrap_or(SystemTime::UNIX_EPOCH);
+        match entries.get(&rel_path) {
+            Some(data) if data.meta.mtime == mtime => {}
+            _ => return true,
+        }
+    }
+    // Check for deleted files
+    on_disk_count != entries.len()
+}
+
 impl Index {
     /// Load or build the index for the given project root.
+    ///
+    /// Tries a shared (read-only) open first so multiple cx processes can
+    /// run concurrently.  Falls back to an exclusive open only when the
+    /// index needs to be created or updated.
     pub fn load_or_build(root: &Path) -> Self {
         let db_path = root.join(DB_FILE);
 
-        let db = match open_db(&db_path) {
+        // Fast path: open read-only (shared lock) and check if index is fresh
+        if db_path.exists() {
+            match ReadOnlyDatabase::open(&db_path) {
+                Ok(ro_db) => {
+                    if let Some(entries) = load_entries(&ro_db)
+                        && !needs_update(root, &entries) {
+                        return Index { root: root.to_path_buf(), db: None, entries };
+                    }
+                }
+                Err(redb::DatabaseError::UpgradeRequired(_)) => {
+                    // Old redb format; delete so exclusive path recreates it
+                    let _ = fs::remove_file(&db_path);
+                }
+                Err(_) => {}
+            }
+        }
+
+        // Slow path: need exclusive access to create or update the index
+        let db = match open_db_exclusive(&db_path) {
             Ok(db) => db,
+            Err(redb::DatabaseError::UpgradeRequired(_)) => {
+                // Old redb format (e.g. v2 → v3 upgrade); delete and recreate
+                let _ = fs::remove_file(&db_path);
+                match open_db_exclusive(&db_path) {
+                    Ok(db) => db,
+                    Err(e) => {
+                        eprintln!("cx: failed to open database: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
             Err(e) => {
                 eprintln!("cx: failed to open database: {}", e);
                 std::process::exit(1);
             }
         };
 
-        // Check version
-        let version_ok = {
-            let read_txn = db.begin_read().ok();
-            read_txn.and_then(|txn| {
-                let table = txn.open_table(META_TABLE).ok()?;
-                let val = table.get("version").ok()??;
-                let bytes = val.value();
-                if bytes.len() == 4 {
-                    Some(u32::from_le_bytes(bytes.try_into().unwrap()) == INDEX_VERSION)
-                } else {
-                    None
-                }
-            }).unwrap_or(false)
-        };
-
-        if !version_ok {
-            let mut idx = Index {
-                root: root.to_path_buf(),
-                db,
-                entries: HashMap::new(),
-            };
-            idx.full_crawl();
-            idx.save_all();
-            warn_if_not_gitignored(root);
-            return idx;
-        }
-
-        // Load from db into memory — skip entries with corrupt/unknown data
-        let mut entries: HashMap<PathBuf, FileData> = HashMap::new();
-
-        if let Ok(read_txn) = db.begin_read() {
-            if let Ok(table) = read_txn.open_table(FILES_TABLE) {
-                for (key, val) in table.iter().into_iter().flatten().flatten() {
-                    let path = PathBuf::from(key.value());
-                    if let Some(meta) = decode_file_entry(val.value()) {
-                        entries.insert(path, FileData { meta, symbols: Vec::new() });
-                    }
-                }
+        match load_entries(&db) {
+            Some(entries) => {
+                let mut idx = Index { root: root.to_path_buf(), db: Some(db), entries };
+                idx.incremental_update();
+                idx
             }
-            if let Ok(table) = read_txn.open_table(SYMBOLS_TABLE) {
-                for (key, val) in table.iter().into_iter().flatten().flatten() {
-                    let path = PathBuf::from(key.value());
-                    let syms: Vec<Symbol> = bincode::deserialize(val.value()).unwrap_or_default();
-                    if let Some(data) = entries.get_mut(&path) {
-                        data.symbols = syms;
-                    }
-                }
+            None => {
+                let mut idx = Index {
+                    root: root.to_path_buf(),
+                    db: Some(db),
+                    entries: HashMap::new(),
+                };
+                idx.full_crawl();
+                idx.save_all();
+                warn_if_not_gitignored(root);
+                idx
             }
         }
-
-        let mut idx = Index { root: root.to_path_buf(), db, entries };
-        idx.incremental_update();
-        idx
     }
 
     /// Crawl from project root, collecting all supported files.
@@ -307,7 +375,8 @@ impl Index {
         }
 
         if !deleted.is_empty() || !changed.is_empty() {
-            let write_txn = match self.db.begin_write() {
+            let Some(ref db) = self.db else { return };
+            let write_txn = match db.begin_write() {
                 Ok(txn) => txn,
                 Err(e) => {
                     eprintln!("cx: failed to begin write for incremental update: {}", e);
@@ -348,7 +417,8 @@ impl Index {
     /// Write the entire index to the database (used after full_crawl).
     /// Clears all existing data first to avoid stale entries.
     fn save_all(&self) {
-        let write_txn = match self.db.begin_write() {
+        let Some(ref db) = self.db else { return };
+        let write_txn = match db.begin_write() {
             Ok(txn) => txn,
             Err(e) => {
                 eprintln!("cx: failed to begin write: {}", e);
@@ -520,7 +590,7 @@ mod tests {
         let cwd = env::current_dir().unwrap();
         let mut idx = Index {
             root: cwd,
-            db,
+            db: Some(db),
             entries: HashMap::new(),
         };
         idx.full_crawl();
