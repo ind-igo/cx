@@ -29,12 +29,14 @@ echo "Installing cx (${TARGET})..."
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
-curl -sL "$URL" | tar xz -C "$tmpdir"
+curl -fSL "$URL" -o "$tmpdir/cx.tar.gz" || { echo "Download failed. Check https://github.com/${REPO}/releases" >&2; exit 1; }
+tar xz -C "$tmpdir" -f "$tmpdir/cx.tar.gz"
 
 if [ -w "$INSTALL_DIR" ]; then
   mv "$tmpdir/$BINARY" "$INSTALL_DIR/$BINARY"
 else
   sudo mv "$tmpdir/$BINARY" "$INSTALL_DIR/$BINARY"
 fi
+chmod +x "$INSTALL_DIR/$BINARY"
 
 echo "cx installed to ${INSTALL_DIR}/cx"
