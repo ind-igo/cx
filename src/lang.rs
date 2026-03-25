@@ -30,11 +30,11 @@ pub fn add(languages: &[String]) -> i32 {
         Ok(_) => {
             eprintln!("cx: installed {} grammar(s)", to_download.len());
 
-            // Workaround: tree-sitter-language-pack names dylibs differently from
-            // the C symbol names for some languages (e.g. csharp → c_sharp).
-            // Create symlinks so dynamic loading works with the C symbol name.
-            if let Ok(cache_dir) = tree_sitter_language_pack::cache_dir() {
-                let libs_dir = cache_dir.join("libs");
+            // Workaround: tree-sitter-language-pack uses c_symbol_for() to build
+            // the file path, so get_language("csharp") looks for libtree_sitter_c_sharp.dylib
+            // but the downloaded file is libtree_sitter_csharp.dylib. Create symlinks.
+            // See KNOWN_ISSUES.md for details.
+            if let Ok(libs_dir) = tree_sitter_language_pack::cache_dir() {
                 create_compat_symlinks(&libs_dir);
             }
 
@@ -48,14 +48,13 @@ pub fn add(languages: &[String]) -> i32 {
     }
 }
 
-/// Mappings where the download name differs from the C symbol name.
-/// (download_name, c_symbol_name)
+/// Mappings where the download file name differs from what get_language() expects.
+/// (download_name, expected_lib_name)
 const COMPAT_SYMLINKS: &[(&str, &str)] = &[
     ("csharp", "c_sharp"),
 ];
 
-/// Create compatibility symlinks for languages where the download name
-/// differs from the C symbol name (e.g. csharp → c_sharp).
+/// Create compatibility symlinks so get_language() can find the downloaded grammar.
 fn create_compat_symlinks(libs_dir: &std::path::Path) {
     for &(download, c_sym) in COMPAT_SYMLINKS {
         if let Ok(entries) = std::fs::read_dir(libs_dir) {
@@ -103,14 +102,13 @@ pub fn remove(languages: &[String]) -> i32 {
         return 1;
     }
 
-    let cache_dir = match tree_sitter_language_pack::cache_dir() {
+    let libs_dir = match tree_sitter_language_pack::cache_dir() {
         Ok(dir) => dir,
         Err(e) => {
             eprintln!("cx: failed to find cache directory: {}", e);
             return 1;
         }
     };
-    let libs_dir = cache_dir.join("libs");
 
     for lang in languages {
         let names = download_names_for(lang);
@@ -129,7 +127,6 @@ pub fn remove(languages: &[String]) -> i32 {
                 }
             }
         }
-        // Also remove compat symlinks (e.g. c_sharp → csharp)
         remove_compat_symlinks(&libs_dir, &names);
 
         if removed_any {
