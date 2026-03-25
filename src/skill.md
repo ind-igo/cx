@@ -25,6 +25,8 @@ cx overview PATH                                    file table of contents
 cx symbols [--kind K] [--name GLOB] [--file PATH]   search symbols project-wide
 cx definition --name NAME [--from PATH] [--kind K]  get a function/type body
 cx references --name NAME [--file PATH]              find all usages of a symbol
+cx lang list                                         show supported languages
+cx lang add LANG [LANG...]                           install language grammars
 ```
 
 Short aliases: `cx o`, `cx s`, `cx d`, `cx r`
@@ -32,3 +34,7 @@ Short aliases: `cx o`, `cx s`, `cx d`, `cx r`
 Symbol kinds: fn, method, struct, enum, trait, type, const, class, interface, module, event
 
 Check signatures for `pub`/`export` to identify public API without reading the file.
+
+## Missing grammars
+
+If cx reports a missing grammar (e.g. `cx: rust grammar not installed`), install it with `cx lang add rust`. Run `cx lang list` to see what's installed.

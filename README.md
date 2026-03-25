@@ -127,7 +127,27 @@ References are computed on-the-fly via AST walking (not indexed), so results are
 
 On first invocation, cx builds an index (`.cx-index.db`) by parsing all source files with tree-sitter. The index stores symbols, signatures, and byte ranges for every file. Subsequent invocations incrementally update only changed files.
 
-**Supported languages:** Rust, TypeScript/JavaScript, Python, Go, C, C++, Java, Ruby, C#, Lua, Zig, Bash, Solidity, Elixir
+Language grammars are downloaded on demand as shared libraries via [tree-sitter-language-pack](https://github.com/kreuzberg-dev/tree-sitter-language-pack). Install the ones you need:
+
+```bash
+cx lang add rust typescript python
+cx lang list        # see what's installed
+cx lang remove lua  # remove one
+```
+
+If you run cx without installing grammars first, it will tell you which ones are needed:
+
+```
+cx: no language grammars installed
+
+Detected languages in this project:
+  rust (42 files)
+  typescript (18 files)
+
+Install with: cx lang add rust typescript
+```
+
+**Supported languages:** Run `cx lang list` to see all supported languages and their install status.
 
 **Index location:** `.cx-index.db` in the project root (add to `.gitignore`)
 
@@ -141,26 +161,17 @@ Overview, symbols, and references use [TOON](https://toonformat.dev) -- a token-
 
 ## Adding a language
 
-cx uses tree-sitter grammars. To add a new language:
+cx uses tree-sitter grammars loaded dynamically via `tree-sitter-language-pack`. To add support for a new language:
 
-1. Add the tree-sitter grammar crate to `Cargo.toml`
-2. In `src/language/mod.rs`, add:
-   - A grammar function (e.g., `fn swift_grammar(_ext: &str) -> tree_sitter::Language`)
+1. In `src/language/mod.rs`, add:
    - A query constant with tree-sitter patterns for the language's symbols
    - A query function returning the constant
-   - A `LanguageConfig` entry in the `LANGUAGES` array (including `ref_node_types` for find-references support)
-3. Add the language variant to `Language` enum in `src/index.rs`
-4. Add tests
+   - A `LanguageConfig` entry in the `LANGUAGES` array
+2. Add tests
 
-Here's a minimal example — adding Swift support:
+The grammar itself is downloaded at runtime — no build dependency needed. Here's a minimal example — adding Swift support:
 
 ```rust
-// Grammar function
-fn swift_grammar(_ext: &str) -> tree_sitter::Language {
-    tree_sitter_swift::LANGUAGE.into()
-}
-
-// Query — capture the patterns you care about
 const SWIFT_QUERY: &str = r#"
 (function_declaration
   name: (simple_identifier) @name) @definition.function
@@ -174,11 +185,11 @@ const SWIFT_QUERY: &str = r#"
 
 fn swift_query() -> &'static str { SWIFT_QUERY }
 
-// Registry entry
 LanguageConfig {
-    language: Language::Swift,
+    name: "swift",
     extensions: &["swift"],
-    grammar: swift_grammar,
+    grammar_override: &[],
+    download_names: &[],
     query: swift_query,
     sig_body_child: None,
     sig_delimiter: Some(b'{'),
@@ -187,6 +198,8 @@ LanguageConfig {
 },
 ```
 
-**Writing queries:** Use `tree-sitter parse` or inspect `node-types.json` in the grammar crate to discover the AST structure. Capture `@name` for the symbol name and `@definition.<kind>` for the enclosing node. Supported kinds: `function`, `method`, `class`, `interface`, `type`, `enum`, `module`, `constant`, `event`.
+**Writing queries:** Use `tree-sitter parse` or inspect `node-types.json` in the grammar to discover the AST structure. Capture `@name` for the symbol name and `@definition.<kind>` for the enclosing node. Supported kinds: `function`, `method`, `class`, `interface`, `type`, `enum`, `module`, `constant`, `event`.
 
 **Kind overrides:** When a language maps generic capture names to specific concepts (e.g., Rust's `definition.class` → `SymbolKind::Struct`), add entries to `kind_overrides`. These are checked before the default mapping.
+
+**Grammar names:** The `name` field must match the name used by `tree-sitter-language-pack` (check their [language list](https://github.com/kreuzberg-dev/tree-sitter-language-pack)). If the download name differs from the config name, use `download_names` (e.g., `c_sharp` downloads as `csharp`).
