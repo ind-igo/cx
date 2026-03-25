@@ -166,27 +166,44 @@ fn load_entries(db: &impl ReadableDatabase) -> Option<HashMap<PathBuf, FileData>
 
 /// Check if any files on disk have changed compared to indexed entries.
 fn needs_update(root: &Path, entries: &HashMap<PathBuf, FileData>) -> bool {
-    let mut on_disk_count = 0usize;
+    // Collect languages that are known-installed (have at least one indexed file).
+    let indexed_langs: std::collections::HashSet<&str> = entries
+        .values()
+        .map(|d| d.meta.language.as_str())
+        .collect();
+
+    let mut matched_count = 0usize;
     for entry in walk(root) {
         let path = entry.path();
-        if detect_language(path).is_none() {
+        let Some(lang) = detect_language(path) else {
             continue;
-        }
+        };
         let rel_path = match path.strip_prefix(root) {
             Ok(p) => p.to_path_buf(),
             Err(_) => continue,
         };
-        on_disk_count += 1;
-        let mtime = entry.metadata().ok()
-            .and_then(|m| m.modified().ok())
-            .unwrap_or(SystemTime::UNIX_EPOCH);
         match entries.get(&rel_path) {
-            Some(data) if data.meta.mtime() == mtime => {}
-            _ => return true,
+            Some(data) => {
+                let mtime = entry.metadata().ok()
+                    .and_then(|m| m.modified().ok())
+                    .unwrap_or(SystemTime::UNIX_EPOCH);
+                if data.meta.mtime() != mtime {
+                    return true; // mtime changed
+                }
+                matched_count += 1;
+            }
+            None => {
+                // File not in index. If we've indexed other files of this language,
+                // the grammar is installed and this is a genuinely new file.
+                if indexed_langs.contains(lang) {
+                    return true;
+                }
+                // Otherwise grammar isn't installed — skip, don't trigger update.
+            }
         }
     }
     // Check for deleted files
-    on_disk_count != entries.len()
+    matched_count != entries.len()
 }
 
 impl Index {

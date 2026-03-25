@@ -584,7 +584,7 @@ fn parse_source(lang: &str, source: &[u8], path: &Path) -> Result<(&'static Lang
     let grammar_name = resolve_grammar_name(config, ext);
 
     let ts_lang = tree_sitter_language_pack::get_language(grammar_name)
-        .map_err(|_| LangError::NotInstalled(grammar_name.to_string()))?;
+        .map_err(|_| LangError::NotInstalled(config.name.to_string()))?;
 
     let mut parser = Parser::new();
     parser.set_language(&ts_lang).map_err(|_| LangError::ParseFailed)?;
