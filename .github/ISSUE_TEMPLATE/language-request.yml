@@ -1,0 +1,60 @@
+name: Language Request
+description: Request support for a new programming language
+labels: ["enhancement", "language"]
+body:
+  - type: input
+    id: language
+    attributes:
+      label: Language
+      description: Name of the language (e.g. "Swift", "Kotlin")
+      placeholder: Swift
+    validations:
+      required: true
+
+  - type: input
+    id: extensions
+    attributes:
+      label: File extensions
+      description: Comma-separated list of file extensions
+      placeholder: ".swift"
+    validations:
+      required: true
+
+  - type: input
+    id: grammar
+    attributes:
+      label: tree-sitter grammar
+      description: Link to the tree-sitter grammar repo, or the name in tree-sitter-language-pack if available
+      placeholder: https://github.com/alex-pinkus/tree-sitter-swift
+
+  - type: textarea
+    id: symbols
+    attributes:
+      label: Key symbol types
+      description: What kinds of symbols should cx extract? (functions, classes, interfaces, etc.)
+      placeholder: |
+        - functions (func declarations)
+        - classes / structs
+        - protocols (like interfaces)
+        - enums
+
+  - type: textarea
+    id: example
+    attributes:
+      label: Example source
+      description: A small code sample showing the symbols cx should extract
+      placeholder: |
+        func greet(name: String) -> String {
+            return "Hello, \(name)"
+        }
+
+        class UserService {
+            func getName() -> String { "test" }
+        }
+
+  - type: checkboxes
+    id: in-language-pack
+    attributes:
+      label: Availability
+      options:
+        - label: Grammar is available in [tree-sitter-language-pack](https://github.com/kreuzberg-dev/tree-sitter-language-pack)
