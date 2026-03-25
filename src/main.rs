@@ -1,4 +1,5 @@
 mod index;
+mod lang;
 mod output;
 mod query;
 mod language;
@@ -72,8 +73,29 @@ enum Commands {
         #[arg(long)]
         file: Option<PathBuf>,
     },
+    /// Manage language grammars
+    Lang {
+        #[command(subcommand)]
+        action: LangAction,
+    },
     /// Print the agent skill file to stdout
     Skill,
+}
+
+#[derive(Subcommand)]
+enum LangAction {
+    /// Download and install language grammars
+    Add {
+        /// Language names (e.g. rust typescript python)
+        languages: Vec<String>,
+    },
+    /// Remove installed language grammars
+    Remove {
+        /// Language names to remove
+        languages: Vec<String>,
+    },
+    /// List supported languages and their install status
+    List,
 }
 
 fn resolve_root(project: Option<PathBuf>) -> PathBuf {
@@ -106,6 +128,13 @@ fn main() {
         Commands::References { name, file } => {
             let idx = index::Index::load_or_build(&root);
             query::references(&idx, &name, file.as_deref(), cli.json)
+        }
+        Commands::Lang { action } => {
+            match action {
+                LangAction::Add { languages } => lang::add(&languages),
+                LangAction::Remove { languages } => lang::remove(&languages),
+                LangAction::List => lang::list(),
+            }
         }
         Commands::Skill => {
             print!("{}", include_str!("skill.md"));

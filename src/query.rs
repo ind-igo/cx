@@ -247,7 +247,14 @@ pub fn references(
             continue;
         }
 
-        let refs = language::find_references(data.meta.language, &source, &abs_path, name);
+        let refs = match language::find_references(&data.meta.language, &source, &abs_path, name) {
+            Ok(r) => r,
+            Err(language::LangError::NotInstalled(lang)) => {
+                eprintln!("cx: {} grammar not installed — run: cx lang add {}", lang, lang);
+                return 1;
+            }
+            Err(_) => continue,
+        };
         if refs.is_empty() {
             continue;
         }

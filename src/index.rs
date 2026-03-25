@@ -1,14 +1,14 @@
 use ignore::WalkBuilder;
 use redb::{Database, ReadOnlyDatabase, ReadableDatabase, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::language::{detect_language, parse_and_extract};
+use crate::language::{detect_language, parse_and_extract, primary_extension, LangError};
 
-pub const INDEX_VERSION: u32 = 3;
+pub const INDEX_VERSION: u32 = 4;
 const DB_FILE: &str = ".cx-index.db";
 
 const META_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("meta");
@@ -28,10 +28,26 @@ pub struct FileData {
     pub symbols: Vec<Symbol>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileEntry {
-    pub mtime: SystemTime,
-    pub language: Language,
+    pub mtime_secs: u64,
+    pub mtime_nanos: u32,
+    pub language: String,
+}
+
+impl FileEntry {
+    fn new(mtime: SystemTime, language: &str) -> Self {
+        let dur = mtime.duration_since(UNIX_EPOCH).unwrap_or(Duration::ZERO);
+        FileEntry {
+            mtime_secs: dur.as_secs(),
+            mtime_nanos: dur.subsec_nanos(),
+            language: language.to_string(),
+        }
+    }
+
+    pub fn mtime(&self) -> SystemTime {
+        UNIX_EPOCH + Duration::new(self.mtime_secs, self.mtime_nanos)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,61 +93,12 @@ impl SymbolKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-#[repr(u8)]
-pub enum Language {
-    Rust = 0,
-    TypeScript = 1,
-    Python = 2,
-    Go = 3,
-    C = 4,
-    Cpp = 5,
-    Java = 6,
-    Ruby = 7,
-    CSharp = 8,
-    Lua = 9,
-    Zig = 10,
-    Bash = 11,
-    Solidity = 12,
-    Elixir = 13,
+fn encode_file_entry(entry: &FileEntry) -> Vec<u8> {
+    bincode::serialize(entry).expect("FileEntry serialization should not fail")
 }
 
-// --- Byte encoding for FileEntry (13 bytes: u64 secs + u32 nanos + u8 language) ---
-
-fn encode_file_entry(entry: &FileEntry) -> [u8; 13] {
-    let dur = entry.mtime.duration_since(UNIX_EPOCH).unwrap_or(Duration::ZERO);
-    let mut buf = [0u8; 13];
-    buf[0..8].copy_from_slice(&dur.as_secs().to_le_bytes());
-    buf[8..12].copy_from_slice(&dur.subsec_nanos().to_le_bytes());
-    buf[12] = language_to_u8(entry.language);
-    buf
-}
-
-/// Decode a FileEntry from bytes. Returns None if data is truncated or language is unknown.
 fn decode_file_entry(bytes: &[u8]) -> Option<FileEntry> {
-    if bytes.len() < 13 {
-        return None;
-    }
-    let secs = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
-    let nanos = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
-    let language = u8_to_language(bytes[12])?;
-    Some(FileEntry {
-        mtime: UNIX_EPOCH + Duration::new(secs, nanos),
-        language,
-    })
-}
-
-fn language_to_u8(lang: Language) -> u8 {
-    lang as u8
-}
-
-/// Returns None for unknown language discriminants, triggering a re-index.
-fn u8_to_language(b: u8) -> Option<Language> {
-    use Language::*;
-    [Rust, TypeScript, Python, Go, C, Cpp, Java, Ruby, CSharp, Lua, Zig, Bash, Solidity, Elixir]
-        .get(b as usize)
-        .copied()
+    bincode::deserialize(bytes).ok()
 }
 
 /// Open the database exclusively, retrying on lock contention.
@@ -214,7 +181,7 @@ fn needs_update(root: &Path, entries: &HashMap<PathBuf, FileData>) -> bool {
             .and_then(|m| m.modified().ok())
             .unwrap_or(SystemTime::UNIX_EPOCH);
         match entries.get(&rel_path) {
-            Some(data) if data.meta.mtime == mtime => {}
+            Some(data) if data.meta.mtime() == mtime => {}
             _ => return true,
         }
     }
@@ -290,6 +257,8 @@ impl Index {
 
     /// Crawl from project root, collecting all supported files.
     fn full_crawl(&mut self) {
+        let mut missing_langs: HashMap<String, usize> = HashMap::new();
+
         for entry in walk(&self.root) {
             let path = entry.path();
             let Some(lang) = detect_language(path) else {
@@ -308,22 +277,52 @@ impl Index {
                 .unwrap_or(SystemTime::UNIX_EPOCH);
 
             let symbols = match fs::read(path) {
-                Ok(source) => parse_and_extract(lang, &source, path),
+                Ok(source) => match parse_and_extract(lang, &source, path) {
+                    Ok(syms) => syms,
+                    Err(LangError::NotInstalled(name)) => {
+                        *missing_langs.entry(name).or_insert(0) += 1;
+                        continue;
+                    }
+                    Err(_) => Vec::new(),
+                },
                 Err(e) => {
                     eprintln!("cx: warning: failed to read {}: {}", path.display(), e);
                     Vec::new()
                 }
             };
             self.entries.insert(rel_path, FileData {
-                meta: FileEntry { mtime, language: lang },
+                meta: FileEntry::new(mtime, lang),
                 symbols,
             });
+        }
+
+        // UX: warn about missing grammars
+        if !missing_langs.is_empty() {
+            if self.entries.is_empty() {
+                // No files indexed at all
+                eprintln!("cx: no language grammars installed\n");
+                eprintln!("Detected languages in this project:");
+                let mut langs: Vec<_> = missing_langs.iter().collect();
+                langs.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+                for (lang, count) in &langs {
+                    eprintln!("  {} ({} files)", lang, count);
+                }
+                let names: Vec<&str> = langs.iter().map(|(n, _)| n.as_str()).collect();
+                eprintln!("\nInstall with: cx lang add {}", names.join(" "));
+            } else {
+                // Some files indexed, some missing
+                for (lang, _) in &missing_langs {
+                    let ext = primary_extension(lang);
+                    eprintln!("cx: skipping .{} files — install with: cx lang add {}", ext, lang);
+                }
+            }
         }
     }
 
     /// Check for changed/new/deleted files and update the index.
     fn incremental_update(&mut self) {
-        let mut on_disk: HashMap<PathBuf, (SystemTime, Language)> = HashMap::new();
+        let mut on_disk: HashMap<PathBuf, (SystemTime, &str)> = HashMap::new();
+        let mut missing_langs: HashSet<String> = HashSet::new();
 
         for entry in walk(&self.root) {
             let path = entry.path();
@@ -358,12 +357,19 @@ impl Index {
         // Add new or update changed files
         let mut changed: Vec<(PathBuf, FileEntry, Vec<Symbol>)> = Vec::new();
         for (path, (mtime, lang)) in &on_disk {
-            let needs_update = !matches!(self.entries.get(path), Some(data) if data.meta.mtime == *mtime);
+            let needs_update = !matches!(self.entries.get(path), Some(data) if data.meta.mtime() == *mtime);
             if needs_update {
-                let file_entry = FileEntry { mtime: *mtime, language: *lang };
+                let file_entry = FileEntry::new(*mtime, lang);
                 let abs_path = self.root.join(path);
                 let symbols = match fs::read(&abs_path) {
-                    Ok(source) => parse_and_extract(*lang, &source, &abs_path),
+                    Ok(source) => match parse_and_extract(lang, &source, &abs_path) {
+                        Ok(syms) => syms,
+                        Err(LangError::NotInstalled(name)) => {
+                            missing_langs.insert(name);
+                            continue;
+                        }
+                        Err(_) => Vec::new(),
+                    },
                     Err(_) => Vec::new(),
                 };
                 self.entries.insert(path.clone(), FileData {
@@ -372,6 +378,11 @@ impl Index {
                 });
                 changed.push((path.clone(), file_entry, symbols));
             }
+        }
+
+        for lang in &missing_langs {
+            let ext = primary_extension(lang);
+            eprintln!("cx: skipping .{} files — install with: cx lang add {}", ext, lang);
         }
 
         if !deleted.is_empty() || !changed.is_empty() {
@@ -401,7 +412,8 @@ impl Index {
                     let key = path.to_string_lossy();
                     match bincode::serialize(symbols) {
                         Ok(sym_bytes) => {
-                            let _ = files_table.insert(key.as_ref(), encode_file_entry(entry).as_slice());
+                            let entry_bytes = encode_file_entry(entry);
+                            let _ = files_table.insert(key.as_ref(), entry_bytes.as_slice());
                             let _ = syms_table.insert(key.as_ref(), sym_bytes.as_slice());
                         }
                         Err(e) => eprintln!("cx: failed to serialize symbols for {}: {}", key, e),
@@ -451,7 +463,8 @@ impl Index {
             };
             for (path, data) in &self.entries {
                 let key = path.to_string_lossy();
-                let _ = files_table.insert(key.as_ref(), encode_file_entry(&data.meta).as_slice());
+                let entry_bytes = encode_file_entry(&data.meta);
+                let _ = files_table.insert(key.as_ref(), entry_bytes.as_slice());
                 match bincode::serialize(&data.symbols) {
                     Ok(sym_bytes) => { let _ = syms_table.insert(key.as_ref(), sym_bytes.as_slice()); }
                     Err(e) => eprintln!("cx: failed to serialize symbols for {}: {}", key, e),
@@ -508,53 +521,20 @@ mod tests {
 
     #[test]
     fn test_file_entry_encode_roundtrip() {
-        let entry = FileEntry {
-            mtime: UNIX_EPOCH + Duration::new(1234567890, 42),
-            language: Language::Rust,
-        };
+        let entry = FileEntry::new(
+            UNIX_EPOCH + Duration::new(1234567890, 42),
+            "rust",
+        );
         let bytes = encode_file_entry(&entry);
         let decoded = decode_file_entry(&bytes).expect("should decode");
-        assert_eq!(
-            entry.mtime.duration_since(UNIX_EPOCH).unwrap(),
-            decoded.mtime.duration_since(UNIX_EPOCH).unwrap()
-        );
+        assert_eq!(entry.mtime(), decoded.mtime());
         assert_eq!(entry.language, decoded.language);
     }
 
     #[test]
-    fn test_file_entry_decode_truncated_returns_none() {
+    fn test_file_entry_decode_garbage_returns_none() {
         assert!(decode_file_entry(&[0u8; 5]).is_none());
         assert!(decode_file_entry(&[]).is_none());
-    }
-
-    #[test]
-    fn test_file_entry_decode_unknown_language_returns_none() {
-        let entry = FileEntry {
-            mtime: UNIX_EPOCH + Duration::new(100, 0),
-            language: Language::Rust,
-        };
-        let mut bytes = encode_file_entry(&entry);
-        bytes[12] = 255; // unknown language
-        assert!(decode_file_entry(&bytes).is_none());
-    }
-
-    #[test]
-    fn test_language_roundtrip() {
-        for lang in [
-            Language::Rust, Language::TypeScript, Language::Python, Language::Go,
-            Language::C, Language::Cpp, Language::Java, Language::Ruby,
-            Language::CSharp, Language::Lua, Language::Zig, Language::Bash,
-            Language::Solidity, Language::Elixir,
-        ] {
-            assert_eq!(u8_to_language(language_to_u8(lang)), Some(lang));
-        }
-    }
-
-    #[test]
-    fn test_u8_to_language_unknown_returns_none() {
-        assert!(u8_to_language(200).is_none());
-        assert!(u8_to_language(14).is_none());
-        assert!(u8_to_language(255).is_none());
     }
 
     #[test]
