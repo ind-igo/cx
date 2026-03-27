@@ -372,7 +372,7 @@ impl Index {
         }
 
         // Add new or update changed files
-        let mut changed: Vec<(PathBuf, FileEntry, Vec<Symbol>)> = Vec::new();
+        let mut changed_paths: Vec<PathBuf> = Vec::new();
         for (path, (mtime, lang)) in &on_disk {
             let needs_update = !matches!(self.entries.get(path), Some(data) if data.meta.mtime() == *mtime);
             if needs_update {
@@ -390,10 +390,10 @@ impl Index {
                     Err(_) => Vec::new(),
                 };
                 self.entries.insert(path.clone(), FileData {
-                    meta: file_entry.clone(),
-                    symbols: symbols.clone(),
+                    meta: file_entry,
+                    symbols,
                 });
-                changed.push((path.clone(), file_entry, symbols));
+                changed_paths.push(path.clone());
             }
         }
 
@@ -402,7 +402,7 @@ impl Index {
             eprintln!("cx: skipping .{} files — install with: cx lang add {}", ext, lang);
         }
 
-        if !deleted.is_empty() || !changed.is_empty() {
+        if !deleted.is_empty() || !changed_paths.is_empty() {
             let Some(ref db) = self.db else { return };
             let write_txn = match db.begin_write() {
                 Ok(txn) => txn,
@@ -425,15 +425,17 @@ impl Index {
                     let _ = files_table.remove(key.as_ref());
                     let _ = syms_table.remove(key.as_ref());
                 }
-                for (path, entry, symbols) in &changed {
-                    let key = path.to_string_lossy();
-                    match bincode::serialize(symbols) {
-                        Ok(sym_bytes) => {
-                            let entry_bytes = encode_file_entry(entry);
-                            let _ = files_table.insert(key.as_ref(), entry_bytes.as_slice());
-                            let _ = syms_table.insert(key.as_ref(), sym_bytes.as_slice());
+                for path in &changed_paths {
+                    if let Some(data) = self.entries.get(path) {
+                        let key = path.to_string_lossy();
+                        match bincode::serialize(&data.symbols) {
+                            Ok(sym_bytes) => {
+                                let entry_bytes = encode_file_entry(&data.meta);
+                                let _ = files_table.insert(key.as_ref(), entry_bytes.as_slice());
+                                let _ = syms_table.insert(key.as_ref(), sym_bytes.as_slice());
+                            }
+                            Err(e) => eprintln!("cx: failed to serialize symbols for {}: {}", key, e),
                         }
-                        Err(e) => eprintln!("cx: failed to serialize symbols for {}: {}", key, e),
                     }
                 }
             }

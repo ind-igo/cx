@@ -17,7 +17,7 @@ struct LanguageConfig {
     grammar_override: &'static [(&'static str, &'static str)],
     /// Names to pass to `tree_sitter_language_pack::download()`. Empty = use name.
     download_names: &'static [&'static str],
-    query: fn() -> &'static str,
+    query: &'static str,
     /// Find this child node kind to determine where the body starts; signature = text before it.
     sig_body_child: Option<&'static str>,
     /// Scan for this byte to split signature from body (e.g. b'{').
@@ -28,23 +28,6 @@ struct LanguageConfig {
     /// Node kinds that represent identifier references (for find-references).
     ref_node_types: &'static [&'static str],
 }
-
-// --- Query functions ---
-
-fn rust_query() -> &'static str { RUST_QUERY }
-fn py_query() -> &'static str { PY_QUERY }
-fn ts_query() -> &'static str { TS_QUERY }
-fn go_query() -> &'static str { GO_QUERY }
-fn c_query() -> &'static str { C_QUERY }
-fn cpp_query() -> &'static str { CPP_QUERY }
-fn java_query() -> &'static str { JAVA_QUERY }
-fn ruby_query() -> &'static str { RUBY_QUERY }
-fn csharp_query() -> &'static str { CSHARP_QUERY }
-fn lua_query() -> &'static str { LUA_QUERY }
-fn zig_query() -> &'static str { ZIG_QUERY }
-fn bash_query() -> &'static str { BASH_QUERY }
-fn sol_query() -> &'static str { SOL_QUERY }
-fn elixir_query() -> &'static str { ELIXIR_QUERY }
 
 // --- Inlined TAGS_QUERY from tree-sitter-rust (pinned) ---
 
@@ -342,7 +325,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         extensions: &["rs"],
         grammar_override: &[],
         download_names: &[],
-        query: rust_query,
+        query: RUST_QUERY,
         sig_body_child: None,
         sig_delimiter: Some(b'{'),
         kind_overrides: &[
@@ -361,7 +344,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         extensions: &["ts", "tsx", "js", "jsx"],
         grammar_override: &[("tsx", "tsx"), ("jsx", "tsx")],
         download_names: &["typescript", "tsx"],
-        query: ts_query,
+        query: TS_QUERY,
         sig_body_child: None,
         sig_delimiter: Some(b'{'),
         kind_overrides: &[],
@@ -372,7 +355,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         extensions: &["py"],
         grammar_override: &[],
         download_names: &[],
-        query: py_query,
+        query: PY_QUERY,
         sig_body_child: Some("block"),
         sig_delimiter: None,
         kind_overrides: &[],
@@ -383,7 +366,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         extensions: &["go"],
         grammar_override: &[],
         download_names: &[],
-        query: go_query,
+        query: GO_QUERY,
         sig_body_child: None,
         sig_delimiter: Some(b'{'),
         kind_overrides: &[],
@@ -394,7 +377,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         extensions: &["c"],
         grammar_override: &[],
         download_names: &[],
-        query: c_query,
+        query: C_QUERY,
         sig_body_child: None,
         sig_delimiter: Some(b'{'),
         kind_overrides: &[
@@ -407,7 +390,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         extensions: &["cpp", "cc", "cxx", "h", "hpp", "hxx", "hh"],
         grammar_override: &[],
         download_names: &[],
-        query: cpp_query,
+        query: CPP_QUERY,
         sig_body_child: None,
         sig_delimiter: Some(b'{'),
         kind_overrides: &[],
@@ -418,7 +401,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         extensions: &["java"],
         grammar_override: &[],
         download_names: &[],
-        query: java_query,
+        query: JAVA_QUERY,
         sig_body_child: None,
         sig_delimiter: Some(b'{'),
         kind_overrides: &[],
@@ -429,7 +412,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         extensions: &["rb"],
         grammar_override: &[],
         download_names: &[],
-        query: ruby_query,
+        query: RUBY_QUERY,
         sig_body_child: None,
         sig_delimiter: None,
         kind_overrides: &[],
@@ -440,7 +423,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         extensions: &["cs"],
         grammar_override: &[],
         download_names: &["csharp"],
-        query: csharp_query,
+        query: CSHARP_QUERY,
         sig_body_child: None,
         sig_delimiter: Some(b'{'),
         kind_overrides: &[
@@ -453,7 +436,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         extensions: &["lua"],
         grammar_override: &[],
         download_names: &[],
-        query: lua_query,
+        query: LUA_QUERY,
         sig_body_child: None,
         sig_delimiter: None,
         kind_overrides: &[],
@@ -464,7 +447,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         extensions: &["zig"],
         grammar_override: &[],
         download_names: &[],
-        query: zig_query,
+        query: ZIG_QUERY,
         sig_body_child: None,
         sig_delimiter: Some(b'{'),
         kind_overrides: &[
@@ -477,7 +460,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         extensions: &["sh", "bash"],
         grammar_override: &[],
         download_names: &[],
-        query: bash_query,
+        query: BASH_QUERY,
         sig_body_child: None,
         sig_delimiter: Some(b'{'),
         kind_overrides: &[],
@@ -488,7 +471,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         extensions: &["sol"],
         grammar_override: &[],
         download_names: &[],
-        query: sol_query,
+        query: SOL_QUERY,
         sig_body_child: None,
         sig_delimiter: Some(b'{'),
         kind_overrides: &[],
@@ -499,7 +482,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         extensions: &["ex", "exs"],
         grammar_override: &[],
         download_names: &[],
-        query: elixir_query,
+        query: ELIXIR_QUERY,
         sig_body_child: None,
         sig_delimiter: None,
         kind_overrides: &[],
@@ -578,7 +561,7 @@ fn resolve_grammar_name(config: &LanguageConfig, ext: &str) -> &'static str {
 }
 
 /// Look up config, create parser, and parse source into a tree.
-fn parse_source(lang: &str, source: &[u8], path: &Path) -> Result<(&'static LanguageConfig, tree_sitter::Tree), LangError> {
+fn parse_source(lang: &str, source: &[u8], path: &Path) -> Result<(&'static LanguageConfig, tree_sitter::Tree, &'static str), LangError> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     let config = LANGUAGES.iter().find(|c| c.name == lang).ok_or_else(|| LangError::NotInstalled(lang.to_string()))?;
     let grammar_name = resolve_grammar_name(config, ext);
@@ -589,12 +572,12 @@ fn parse_source(lang: &str, source: &[u8], path: &Path) -> Result<(&'static Lang
     let mut parser = Parser::new();
     parser.set_language(&ts_lang).map_err(|_| LangError::ParseFailed)?;
     let tree = parser.parse(source, None).ok_or(LangError::ParseFailed)?;
-    Ok((config, tree))
+    Ok((config, tree, grammar_name))
 }
 
 /// Parse source and find all identifier nodes whose text matches `name`.
 pub fn find_references(lang: &str, source: &[u8], path: &Path, name: &str) -> Result<Vec<Reference>, LangError> {
-    let (config, tree) = parse_source(lang, source, path)?;
+    let (config, tree, _) = parse_source(lang, source, path)?;
 
     let mut refs = Vec::new();
     let mut stack = vec![tree.root_node()];
@@ -625,14 +608,11 @@ pub fn find_references(lang: &str, source: &[u8], path: &Path, name: &str) -> Re
 /// Parse a file and extract symbols for the given language.
 /// `path` is used to distinguish .tsx from .ts for grammar selection.
 pub fn parse_and_extract(lang: &str, source: &[u8], path: &Path) -> Result<Vec<Symbol>, LangError> {
-    let (config, tree) = parse_source(lang, source, path)?;
-
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let grammar_name = resolve_grammar_name(config, ext);
+    let (config, tree, grammar_name) = parse_source(lang, source, path)?;
 
     let mut cache = QUERY_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     let query = cache.entry(grammar_name.to_string()).or_insert_with(|| {
-        Query::new(&tree.language(), (config.query)()).expect("query compilation failed")
+        Query::new(&tree.language(), config.query).expect("query compilation failed")
     });
 
     Ok(extract_symbols(config, query, &tree, source))
