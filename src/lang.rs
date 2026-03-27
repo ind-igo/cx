@@ -148,5 +148,6 @@ pub fn list() -> i32 {
         let marker = if is_installed { "[installed]" } else { "[missing]" };
         println!("{:<15} {}", lang, marker);
     }
+    eprintln!("\nNeed another language? Open an issue: https://github.com/ind-igo/cx/issues/new?template=language-request.yml");
     0
 }
