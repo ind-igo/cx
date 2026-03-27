@@ -108,7 +108,24 @@ fn resolve_root(project: Option<PathBuf>) -> PathBuf {
     }
 }
 
+pub fn grammar_cache_dir() -> PathBuf {
+    dirs::cache_dir()
+        .unwrap_or_else(|| PathBuf::from(".cache"))
+        .join("cx")
+        .join("grammars")
+}
+
 fn main() {
+    // Use our own cache directory so grammar downloads survive crate version bumps.
+    // See KNOWN_ISSUES.md for details.
+    let config = tree_sitter_language_pack::PackConfig {
+        cache_dir: Some(grammar_cache_dir()),
+        ..Default::default()
+    };
+    if let Err(e) = tree_sitter_language_pack::configure(&config) {
+        eprintln!("cx: failed to configure grammar cache: {}", e);
+    }
+
     let cli = Cli::parse();
     let root = resolve_root(cli.root);
 

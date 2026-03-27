@@ -17,6 +17,7 @@ dependencies = [
  "cfg-if",
  "const-random",
  "once_cell",
+ "serde",
  "version_check",
  "zerocopy",
 ]
@@ -463,6 +464,7 @@ version = "0.5.0"
 dependencies = [
  "bincode",
  "clap",
+ "dirs",
  "ignore",
  "memchr",
  "redb",
@@ -1876,9 +1878,9 @@ checksum = "009994f150cc0cd50ff54917d5bc8bffe8cad10ca10d81c34da2ec421ae61782"
 
 [[package]]
 name = "tree-sitter-language-pack"
-version = "1.1.4"
+version = "1.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39102597d95f54d7a6040eef6b504ed782048c62286a7be86a48d25fc5c4627e"
+checksum = "4082b6b3cf4704e8993db1785259e16cd17325e691eb36499e2e6f84e69d5968"
 dependencies = [
  "ahash",
  "cc",

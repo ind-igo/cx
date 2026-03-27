@@ -785,6 +785,22 @@ fn deduplicate(symbols: Vec<Symbol>) -> Vec<Symbol> {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+    /// Tests bypass main(), so the custom cache dir from configure() isn't set.
+    /// Without this, C# tests fail because get_language looks in the default
+    /// version-keyed cache path instead of ~/Library/Caches/cx/grammars/.
+    fn init() {
+        INIT.call_once(|| {
+            let dir = crate::grammar_cache_dir();
+            let config = tree_sitter_language_pack::PackConfig {
+                cache_dir: Some(dir),
+                ..Default::default()
+            };
+            let _ = tree_sitter_language_pack::configure(&config);
+        });
+    }
 
     // --- Rust ---
 
@@ -1044,6 +1060,7 @@ mod tests {
 
     #[test]
     fn csharp_class_and_method() {
+        init();
         let src = "public class UserService {\n    public string GetName() {\n        return \"test\";\n    }\n}";
         let syms = parse_and_extract("c_sharp", src.as_bytes(), &PathBuf::from("Test.cs")).unwrap();
         let class = syms.iter().find(|s| s.name == "UserService");
@@ -1055,6 +1072,7 @@ mod tests {
 
     #[test]
     fn csharp_struct() {
+        init();
         let src = "public struct Point {\n    public int X;\n    public int Y;\n}";
         let syms = parse_and_extract("c_sharp", src.as_bytes(), &PathBuf::from("Test.cs")).unwrap();
         let s = syms.iter().find(|s| s.name == "Point");
