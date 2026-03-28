@@ -91,7 +91,7 @@ pub fn symbols(
 
     if rows.is_empty() {
         eprintln!("cx: no matches");
-        return 2;
+        return 0;
     }
 
     rows.sort_by(|a, b| a.file.cmp(b.file).then(a.symbol.name.cmp(&b.symbol.name)));
@@ -148,7 +148,7 @@ pub fn definition(
 
     if matches.is_empty() {
         eprintln!("cx: no matches");
-        return 2;
+        return 0;
     }
 
     let results: Vec<DefinitionResult> = matches
@@ -279,7 +279,7 @@ pub fn references(
 
     if rows.is_empty() {
         eprintln!("cx: no matches");
-        return 2;
+        return 0;
     }
 
     rows.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));

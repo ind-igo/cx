@@ -68,9 +68,9 @@ fn overview_nonexistent_exits_1() {
 }
 
 #[test]
-fn symbols_no_match_exits_2() {
+fn symbols_no_match_exits_0() {
     let out = cx().args(["symbols", "--name", "zzz_no_match"]).output().unwrap();
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(0));
 }
 
 #[test]
@@ -171,7 +171,7 @@ fn unsupported_file_type_error() {
 #[test]
 fn no_matches_stderr() {
     let out = cx().args(["definition", "--name", "zzz_nonexistent"]).output().unwrap();
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(0));
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("no matches"), "should print no matches: {stderr}");
 }
