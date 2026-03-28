@@ -165,7 +165,6 @@ cx uses tree-sitter grammars loaded dynamically via `tree-sitter-language-pack`.
 
 1. In `src/language/mod.rs`, add:
    - A query constant with tree-sitter patterns for the language's symbols
-   - A query function returning the constant
    - A `LanguageConfig` entry in the `LANGUAGES` array
 2. Add tests
 
@@ -183,14 +182,12 @@ const SWIFT_QUERY: &str = r#"
   name: (type_identifier) @name) @definition.interface
 "#;
 
-fn swift_query() -> &'static str { SWIFT_QUERY }
-
 LanguageConfig {
     name: "swift",
     extensions: &["swift"],
     grammar_override: &[],
-    download_names: &[],
-    query: swift_query,
+    download_names: &[],  // empty = download name matches config name
+    query: SWIFT_QUERY,
     sig_body_child: None,
     sig_delimiter: Some(b'{'),
     kind_overrides: &[],
