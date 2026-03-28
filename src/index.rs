@@ -300,11 +300,11 @@ impl Index {
                         *missing_langs.entry(name).or_insert(0) += 1;
                         continue;
                     }
-                    Err(_) => Vec::new(),
+                    Err(_) => continue,
                 },
                 Err(e) => {
                     eprintln!("cx: warning: failed to read {}: {}", path.display(), e);
-                    Vec::new()
+                    continue;
                 }
             };
             self.entries.insert(rel_path, FileData {
@@ -385,9 +385,9 @@ impl Index {
                             missing_langs.insert(name);
                             continue;
                         }
-                        Err(_) => Vec::new(),
+                        Err(_) => continue,
                     },
-                    Err(_) => Vec::new(),
+                    Err(_) => continue,
                 };
                 self.entries.insert(path.clone(), FileData {
                     meta: file_entry,
