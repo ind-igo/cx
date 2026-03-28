@@ -328,7 +328,7 @@ impl Index {
                 eprintln!("\nInstall with: cx lang add {}", names.join(" "));
             } else {
                 // Some files indexed, some missing
-                for (lang, _) in &missing_langs {
+                for lang in missing_langs.keys() {
                     let ext = primary_extension(lang);
                     eprintln!("cx: skipping .{} files — install with: cx lang add {}", ext, lang);
                 }
