@@ -52,6 +52,15 @@ In sessions with cx enabled, we measured **58% fewer Read calls** and **40-55% f
 
 **Why not an LSP?** Language servers are built for editors — persistent processes, 1-2GB RAM, per-language setup, and used by humans. Agents only need the ability to query the structure of their codebase. cx optimizes for that access pattern.
 
+## How cx compares
+
+| Tool | Overlap | cx difference |
+|------|---------|---------------|
+| **ctags** | Symbol indexing | Tree-sitter instead of regex, persistent db, built-in query CLI |
+| **LSP** | Go-to-definition, find references, symbol search | No daemon, no compilation, no project setup — just parse and query |
+| **ripgrep** | Finding code by name | Semantic — `cx definition --name X` vs grep-then-read-5-files |
+| **Reading files** | Understanding code | `cx overview` ~200 tokens vs full file read ~thousands |
+
 ## Usage
 
 ### Overview -- file table of contents
