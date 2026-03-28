@@ -202,4 +202,4 @@ LanguageConfig {
 
 **Kind overrides:** When a language maps generic capture names to specific concepts (e.g., Rust's `definition.class` → `SymbolKind::Struct`), add entries to `kind_overrides`. These are checked before the default mapping.
 
-**Grammar names:** The `name` field must match the name used by `tree-sitter-language-pack` (check their [language list](https://github.com/kreuzberg-dev/tree-sitter-language-pack)). If the download name differs from the config name, use `download_names` (e.g., `c_sharp` downloads as `csharp`).
+**Grammar names:** The `name` field must match the name used by `tree-sitter-language-pack` (check their [language list](https://github.com/kreuzberg-dev/tree-sitter-language-pack)). If the download name differs from the config name, use `download_names` (e.g., `typescript` also downloads `tsx`).

@@ -29,69 +29,12 @@ pub fn add(languages: &[String]) -> i32 {
     match tree_sitter_language_pack::download(&to_download) {
         Ok(_) => {
             eprintln!("cx: installed {} grammar(s)", to_download.len());
-
-            // Workaround: tree-sitter-language-pack uses c_symbol_for() to build
-            // the file path, so get_language("csharp") looks for libtree_sitter_c_sharp.dylib
-            // but the downloaded file is libtree_sitter_csharp.dylib. Create symlinks.
-            // See KNOWN_ISSUES.md for details.
-            if let Ok(libs_dir) = tree_sitter_language_pack::cache_dir() {
-                create_compat_symlinks(&libs_dir);
-            }
-
             0
         }
         Err(e) => {
             eprintln!("cx: download failed: {}", e);
             eprintln!("cx: check your network connection and try again");
             1
-        }
-    }
-}
-
-/// Mappings where the download file name differs from what get_language() expects.
-/// (download_name, expected_lib_name)
-const COMPAT_SYMLINKS: &[(&str, &str)] = &[
-    ("csharp", "c_sharp"),
-];
-
-/// Create compatibility symlinks so get_language() can find the downloaded grammar.
-fn create_compat_symlinks(libs_dir: &std::path::Path) {
-    for &(download, c_sym) in COMPAT_SYMLINKS {
-        if let Ok(entries) = std::fs::read_dir(libs_dir) {
-            for entry in entries.flatten() {
-                let name = entry.file_name();
-                let name_str = name.to_string_lossy();
-                let prefix = format!("libtree_sitter_{}", download);
-                if name_str.starts_with(&prefix) {
-                    let ext = &name_str[prefix.len()..];
-                    let symlink_name = format!("libtree_sitter_{}{}", c_sym, ext);
-                    let symlink_path = libs_dir.join(&symlink_name);
-                    if !symlink_path.exists() {
-                        #[cfg(unix)]
-                        {
-                            let _ = std::os::unix::fs::symlink(entry.path().file_name().unwrap(), &symlink_path);
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// Remove compatibility symlinks created by `create_compat_symlinks`.
-fn remove_compat_symlinks(libs_dir: &std::path::Path, download_names: &[&str]) {
-    for &(download, c_sym) in COMPAT_SYMLINKS {
-        if download_names.contains(&download) {
-            let prefix = format!("libtree_sitter_{}", c_sym);
-            if let Ok(entries) = std::fs::read_dir(libs_dir) {
-                for entry in entries.flatten() {
-                    let fname = entry.file_name();
-                    let fname_str = fname.to_string_lossy();
-                    if fname_str.starts_with(&prefix) {
-                        let _ = std::fs::remove_file(entry.path());
-                    }
-                }
-            }
         }
     }
 }
@@ -127,7 +70,6 @@ pub fn remove(languages: &[String]) -> i32 {
                 }
             }
         }
-        remove_compat_symlinks(&libs_dir, &names);
 
         if removed_any {
             eprintln!("cx: removed {} grammar", lang);

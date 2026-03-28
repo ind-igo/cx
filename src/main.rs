@@ -108,7 +108,7 @@ fn resolve_root(project: Option<PathBuf>) -> PathBuf {
     }
 }
 
-pub fn grammar_cache_dir() -> PathBuf {
+fn grammar_cache_dir() -> PathBuf {
     dirs::cache_dir()
         .unwrap_or_else(|| PathBuf::from(".cache"))
         .join("cx")
