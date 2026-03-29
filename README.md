@@ -22,6 +22,12 @@ Or via the install script:
 curl -sL https://raw.githubusercontent.com/ind-igo/cx/master/install.sh | sh
 ```
 
+On Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/ind-igo/cx/master/install.ps1 | iex
+```
+
 ## Agent integration
 
 `cx skill` prints a prompt that teaches any coding agent to prefer cx over raw file reads. Pipe it into whichever instructions file your agent reads:
