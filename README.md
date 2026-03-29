@@ -7,13 +7,19 @@ Semantic code navigation for AI agents — file overviews, symbol search, defini
 ## Install
 
 ```bash
-curl -sL https://raw.githubusercontent.com/ind-igo/cx/master/install.sh | sh
+brew tap ind-igo/cx && brew install cx
 ```
 
 Or with Cargo:
 
-```
+```bash
 cargo install cx-cli
+```
+
+Or via the install script:
+
+```bash
+curl -sL https://raw.githubusercontent.com/ind-igo/cx/master/install.sh | sh
 ```
 
 ## Agent integration
