@@ -146,7 +146,7 @@ References are computed on-the-fly via AST walking (not indexed), so results are
 
 ## How it works
 
-On first invocation, cx builds an index (`.cx-index.db`) by parsing all source files with tree-sitter. The index stores symbols, signatures, and byte ranges for every file. Subsequent invocations incrementally update only changed files.
+On first invocation, cx builds an index by parsing all source files with tree-sitter. The index stores symbols, signatures, and byte ranges for every file. Subsequent invocations incrementally update only changed files.
 
 Language grammars are downloaded on demand as shared libraries via [tree-sitter-language-pack](https://github.com/kreuzberg-dev/tree-sitter-language-pack). Install the ones you need:
 
@@ -170,7 +170,7 @@ Install with: cx lang add rust typescript
 
 **Supported languages:** Run `cx lang list` to see all supported languages and their install status.
 
-**Index location:** `.cx-index.db` in the project root (add to `.gitignore`)
+**Index location:** `~/.cache/cx/indexes/` (one db per project, keyed by path hash). Run `cx cache path` to see the exact location, `cx cache clean` to delete it.
 
 **Project root detection:** walks up from cwd looking for `.git`. Override with `--root /path/to/project`.
 

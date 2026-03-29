@@ -145,6 +145,46 @@ fn definition_max_lines_truncates() {
     assert!(item["lines"].as_u64().unwrap() > 200, "should report total lines: {stdout}");
 }
 
+// --- Cache ---
+
+#[test]
+fn cache_path_prints_path() {
+    let dir = temp_project(&[("src/main.rs", "fn main() {}\n")]);
+    let out = cx_in(dir.path()).args(["cache", "path"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(stdout.contains("indexes/"), "should contain indexes/ path: {stdout}");
+    assert!(stdout.trim().ends_with(".db"), "should end with .db: {stdout}");
+}
+
+#[test]
+fn cache_clean_removes_index() {
+    let dir = temp_project(&[("src/main.rs", "fn main() {}\n")]);
+
+    // Build the index first
+    let out = cx_in(dir.path()).args(["overview", "src/main.rs"]).output().unwrap();
+    assert!(out.status.success());
+
+    // Get the cache path
+    let out = cx_in(dir.path()).args(["cache", "path"]).output().unwrap();
+    let cache_path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    assert!(std::path::Path::new(&cache_path).exists(), "index should exist after build");
+
+    // Clean it
+    let out = cx_in(dir.path()).args(["cache", "clean"]).output().unwrap();
+    assert!(out.status.success());
+    assert!(!std::path::Path::new(&cache_path).exists(), "index should be gone after clean");
+}
+
+#[test]
+fn index_not_in_repo_root() {
+    let dir = temp_project(&[("src/main.rs", "fn main() {}\n")]);
+    let _ = cx_in(dir.path()).args(["overview", "src/main.rs"]).output().unwrap();
+
+    // No .cx-index.db in the repo root
+    assert!(!dir.path().join(".cx-index.db").exists(), "should not create .cx-index.db in repo root");
+}
+
 // --- Version ---
 
 #[test]

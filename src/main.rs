@@ -7,6 +7,7 @@ mod util;
 
 use clap::{Parser, Subcommand};
 use std::env;
+use std::fs;
 use std::path::PathBuf;
 use std::process;
 
@@ -80,6 +81,11 @@ enum Commands {
     },
     /// Print the agent skill file to stdout
     Skill,
+    /// Manage the index cache
+    Cache {
+        #[command(subcommand)]
+        action: CacheAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -96,6 +102,14 @@ enum LangAction {
     },
     /// List supported languages and their install status
     List,
+}
+
+#[derive(Subcommand)]
+enum CacheAction {
+    /// Print the index cache path for the current project
+    Path,
+    /// Delete the cached index for the current project
+    Clean,
 }
 
 fn resolve_root(project: Option<PathBuf>) -> PathBuf {
@@ -156,6 +170,29 @@ fn main() {
         Commands::Skill => {
             print!("{}", include_str!("skill.md"));
             0
+        }
+        Commands::Cache { action } => {
+            let path = index::cache_path_for(&root);
+            match action {
+                CacheAction::Path => {
+                    println!("{}", path.display());
+                    0
+                }
+                CacheAction::Clean => {
+                    if path.exists() {
+                        if let Err(e) = fs::remove_file(&path) {
+                            eprintln!("cx: failed to remove cache: {}", e);
+                            1
+                        } else {
+                            eprintln!("cx: removed {}", path.display());
+                            0
+                        }
+                    } else {
+                        eprintln!("cx: no cached index for this project");
+                        0
+                    }
+                }
+            }
         }
     };
 

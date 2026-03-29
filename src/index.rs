@@ -3,13 +3,31 @@ use redb::{Database, ReadOnlyDatabase, ReadableDatabase, ReadableTable, TableDef
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::language::{detect_language, parse_and_extract, primary_extension, LangError};
 
 pub const INDEX_VERSION: u32 = 4;
-const DB_FILE: &str = ".cx-index.db";
+
+/// Compute the cache path for a given project root.
+/// Returns `~/.cache/cx/indexes/<hash>.db` where hash is derived from the canonical path.
+pub fn cache_path_for(root: &Path) -> PathBuf {
+    let canonical = fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    let mut hasher = DefaultHasher::new();
+    canonical.hash(&mut hasher);
+    let hash = hasher.finish();
+    let dir = index_cache_dir();
+    dir.join(format!("{:016x}.db", hash))
+}
+
+fn index_cache_dir() -> PathBuf {
+    dirs::cache_dir()
+        .unwrap_or_else(|| PathBuf::from(".cache"))
+        .join("cx")
+        .join("indexes")
+}
 
 const META_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("meta");
 const FILES_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("files");
@@ -213,7 +231,10 @@ impl Index {
     /// run concurrently.  Falls back to an exclusive open only when the
     /// index needs to be created or updated.
     pub fn load_or_build(root: &Path) -> Self {
-        let db_path = root.join(DB_FILE);
+        let db_path = cache_path_for(root);
+        if let Some(parent) = db_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
 
         // Fast path: open read-only (shared lock) and check if index is fresh
         if db_path.exists() {
@@ -266,7 +287,6 @@ impl Index {
                 };
                 idx.full_crawl();
                 idx.save_all();
-                warn_if_not_gitignored(root);
                 idx
             }
         }
@@ -413,11 +433,11 @@ impl Index {
             };
             {
                 let Ok(mut files_table) = write_txn.open_table(FILES_TABLE) else {
-                    eprintln!("cx: failed to open files table — rebuild with: rm .cx-index.db");
+                    eprintln!("cx: failed to open files table — rebuild with: cx cache clean");
                     return;
                 };
                 let Ok(mut syms_table) = write_txn.open_table(SYMBOLS_TABLE) else {
-                    eprintln!("cx: failed to open symbols table — rebuild with: rm .cx-index.db");
+                    eprintln!("cx: failed to open symbols table — rebuild with: cx cache clean");
                     return;
                 };
                 for path in &deleted {
@@ -464,7 +484,7 @@ impl Index {
         // Write version
         {
             let Ok(mut table) = write_txn.open_table(META_TABLE) else {
-                eprintln!("cx: failed to open meta table — rebuild with: rm .cx-index.db");
+                eprintln!("cx: failed to open meta table — rebuild with: cx cache clean");
                 return;
             };
             let _ = table.insert("version", INDEX_VERSION.to_le_bytes().as_slice());
@@ -473,11 +493,11 @@ impl Index {
         // Write files and symbols
         {
             let Ok(mut files_table) = write_txn.open_table(FILES_TABLE) else {
-                eprintln!("cx: failed to open files table — rebuild with: rm .cx-index.db");
+                eprintln!("cx: failed to open files table — rebuild with: cx cache clean");
                 return;
             };
             let Ok(mut syms_table) = write_txn.open_table(SYMBOLS_TABLE) else {
-                eprintln!("cx: failed to open symbols table — rebuild with: rm .cx-index.db");
+                eprintln!("cx: failed to open symbols table — rebuild with: cx cache clean");
                 return;
             };
             for (path, data) in &self.entries {
@@ -498,19 +518,6 @@ impl Index {
 
 }
 
-/// Warn once if .cx-index.db is not in .gitignore.
-fn warn_if_not_gitignored(root: &Path) {
-    use std::process::Command;
-    let ok = Command::new("git")
-        .args(["check-ignore", "-q", DB_FILE])
-        .current_dir(root)
-        .status()
-        .is_ok_and(|s| s.success());
-    if !ok {
-        eprintln!("cx: created .cx-index.db — consider adding it to .gitignore");
-    }
-}
-
 /// Walk the project tree, respecting .gitignore and skipping the index/db files.
 fn walk(root: &Path) -> impl Iterator<Item = ignore::DirEntry> {
     WalkBuilder::new(root)
@@ -520,7 +527,7 @@ fn walk(root: &Path) -> impl Iterator<Item = ignore::DirEntry> {
         .git_exclude(true)
         .filter_entry(|e| {
             let name = e.file_name().to_str().unwrap_or("");
-            if name == ".git" || name.starts_with(".cx-index") {
+            if name == ".git" {
                 return false;
             }
             if e.file_type().is_some_and(|ft| ft.is_dir()) && e.path().join(".cx-ignore").exists() {
@@ -639,8 +646,8 @@ mod tests {
         assert_eq!(idx.entries.get(&PathBuf::from("src/main.rs")).unwrap().symbols.len(), 1);
         assert_eq!(idx.entries.get(&PathBuf::from("src/lib.rs")).unwrap().symbols.len(), 1);
 
-        // DB file should exist
-        assert!(dir.path().join(DB_FILE).exists());
+        // DB file should exist in cache dir
+        assert!(cache_path_for(dir.path()).exists());
     }
 
     #[test]
@@ -700,8 +707,13 @@ mod tests {
         assert_eq!(idx.entries.len(), 1);
         drop(idx);
 
-        // Add a new file
-        fs::write(dir.path().join("src/b.rs"), "fn b() {}\n").unwrap();
+        // Set mtime in the future so the incremental update detects the new file
+        // even on filesystems with coarse (1-second) timestamp granularity.
+        let b_path = dir.path().join("src/b.rs");
+        fs::write(&b_path, "fn b() {}\n").unwrap();
+        let future = SystemTime::now() + Duration::from_secs(2);
+        fs::File::open(&b_path).unwrap()
+            .set_times(fs::FileTimes::new().set_modified(future)).unwrap();
 
         let idx2 = Index::load_or_build(dir.path());
         assert_eq!(idx2.entries.len(), 2);
@@ -720,10 +732,13 @@ mod tests {
         assert_eq!(idx.entries.get(&PathBuf::from("src/a.rs")).unwrap().symbols.len(), 1);
         drop(idx);
 
-        // Modify the file — add a second function
-        // Sleep briefly to ensure mtime changes
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        fs::write(dir.path().join("src/a.rs"), "fn a() {}\nfn b() {}\n").unwrap();
+        // Modify the file — add a second function.
+        // Set mtime in the future to avoid coarse-granularity timestamp ties.
+        let a_path = dir.path().join("src/a.rs");
+        fs::write(&a_path, "fn a() {}\nfn b() {}\n").unwrap();
+        let future = SystemTime::now() + Duration::from_secs(2);
+        fs::File::open(&a_path).unwrap()
+            .set_times(fs::FileTimes::new().set_modified(future)).unwrap();
 
         let idx2 = Index::load_or_build(dir.path());
         assert_eq!(
@@ -767,7 +782,7 @@ mod tests {
         drop(idx);
 
         // Corrupt the version in the db
-        let db = Database::create(dir.path().join(DB_FILE)).unwrap();
+        let db = Database::create(cache_path_for(dir.path())).unwrap();
         {
             let write_txn = db.begin_write().unwrap();
             {
