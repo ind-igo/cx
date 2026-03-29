@@ -58,7 +58,7 @@ pub fn symbols(
                 let ext = abs.extension().and_then(|e| e.to_str()).unwrap_or("(none)");
                 eprintln!("cx: unsupported file type: .{}", ext);
             } else {
-                eprintln!("cx: file not in index: {}", display_path(&rel));
+                eprintln!("cx: file not in index: {}", display_path(rel));
             }
             return 1;
         }
@@ -100,7 +100,7 @@ pub fn symbols(
     let out: Vec<SymbolRowOut> = rows
         .into_iter()
         .map(|r| SymbolRowOut {
-            file: if single_file { None } else { Some(display_path(&r.file)) },
+            file: if single_file { None } else { Some(display_path(r.file)) },
             name: r.symbol.name.clone(),
             kind: r.symbol.kind.as_str().to_string(),
             signature: r.symbol.signature.clone(),
@@ -223,7 +223,7 @@ pub fn references(
                         let ext = abs.extension().and_then(|e| e.to_str()).unwrap_or("(none)");
                         eprintln!("cx: unsupported file type: .{}", ext);
                     } else {
-                        eprintln!("cx: file not in index: {}", display_path(&rel));
+                        eprintln!("cx: file not in index: {}", display_path(rel));
                     }
                     return 1;
                 }
