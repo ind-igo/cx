@@ -58,7 +58,7 @@ pub fn symbols(
                 let ext = abs.extension().and_then(|e| e.to_str()).unwrap_or("(none)");
                 eprintln!("cx: unsupported file type: .{}", ext);
             } else {
-                eprintln!("cx: file not in index: {}", rel.display());
+                eprintln!("cx: file not in index: {}", display_path(&rel));
             }
             return 1;
         }
@@ -100,7 +100,7 @@ pub fn symbols(
     let out: Vec<SymbolRowOut> = rows
         .into_iter()
         .map(|r| SymbolRowOut {
-            file: if single_file { None } else { Some(r.file.display().to_string()) },
+            file: if single_file { None } else { Some(display_path(&r.file)) },
             name: r.symbol.name.clone(),
             kind: r.symbol.kind.as_str().to_string(),
             signature: r.symbol.signature.clone(),
@@ -169,7 +169,7 @@ pub fn definition(
             };
 
             DefinitionResult {
-                file: path.display().to_string(),
+                file: display_path(path),
                 line: start_line,
                 truncated: if truncated { Some(true) } else { None },
                 lines: if truncated { Some(line_count) } else { None },
@@ -223,7 +223,7 @@ pub fn references(
                         let ext = abs.extension().and_then(|e| e.to_str()).unwrap_or("(none)");
                         eprintln!("cx: unsupported file type: .{}", ext);
                     } else {
-                        eprintln!("cx: file not in index: {}", rel.display());
+                        eprintln!("cx: file not in index: {}", display_path(&rel));
                     }
                     return 1;
                 }
@@ -269,7 +269,7 @@ pub fn references(
                 .map(|l| l.trim().to_string())
                 .unwrap_or_default();
             rows.push(ReferenceRow {
-                file: path.display().to_string(),
+                file: display_path(path),
                 line: r.line,
                 kind: r.parent_kind,
                 context,
@@ -302,6 +302,11 @@ fn read_body(root: &Path, file: &Path, byte_range: (usize, usize)) -> Option<(St
     Some((body, line))
 }
 
+/// Display a path using forward slashes (consistent across platforms).
+fn display_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
 /// Make a path relative to the project root if it's absolute,
 /// or resolve it from cwd if relative.
 fn make_relative(path: &Path, root: &Path) -> PathBuf {
@@ -311,5 +316,17 @@ fn make_relative(path: &Path, root: &Path) -> PathBuf {
         let cwd = std::env::current_dir().unwrap_or_default();
         let abs = cwd.join(path);
         abs.strip_prefix(root).unwrap_or(path).to_path_buf()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_path_normalizes_backslashes() {
+        assert_eq!(display_path(Path::new("src/main.rs")), "src/main.rs");
+        assert_eq!(display_path(Path::new("src\\main.rs")), "src/main.rs");
+        assert_eq!(display_path(Path::new("src\\sub\\file.rs")), "src/sub/file.rs");
     }
 }
