@@ -286,7 +286,7 @@ const ELIXIR_QUERY: &str = r#"
 (call
   target: (identifier) @_keyword
   (arguments (alias) @name)
-  (#any-of? @_keyword "defmodule" "defprotocol")) @definition.module
+  (#any-of? @_keyword "defmodule" "defprotocol" "defimpl")) @definition.module
 
 (call
   target: (identifier) @_keyword
@@ -295,6 +295,22 @@ const ELIXIR_QUERY: &str = r#"
      (call target: (identifier) @name)
      (binary_operator left: (call target: (identifier) @name))])
   (#any-of? @_keyword "def" "defp" "defmacro" "defmacrop" "defguard" "defguardp" "defdelegate")) @definition.function
+
+(unary_operator
+  operand: (call
+    target: (identifier) @_keyword
+    (arguments
+      (binary_operator
+        left: (identifier) @name)))
+  (#any-of? @_keyword "type" "typep" "opaque")) @definition.type
+
+(unary_operator
+  operand: (call
+    target: (identifier) @_keyword
+    (arguments
+      (binary_operator
+        left: (call target: (identifier) @name)))
+    (#eq? @_keyword "callback"))) @definition.method
 "#;
 
 // --- Registry ---
@@ -1137,6 +1153,53 @@ mod tests {
         let func = syms.iter().find(|s| s.name == "get_user");
         assert!(func.is_some(), "should find function: {:?}", syms);
         assert_eq!(func.unwrap().kind, SymbolKind::Fn);
+    }
+
+    #[test]
+    fn elixir_type_definitions() {
+        let src = "defmodule MyApp do\n  @type status :: :active | :inactive\n  @typep internal :: map()\n  @opaque token :: binary()\nend";
+        let syms = extract("elixir", src, "test.ex");
+        let status = syms.iter().find(|s| s.name == "status");
+        assert!(status.is_some(), "should find @type: {:?}", syms);
+        assert_eq!(status.unwrap().kind, SymbolKind::Type);
+        let internal = syms.iter().find(|s| s.name == "internal");
+        assert!(internal.is_some(), "should find @typep: {:?}", syms);
+        assert_eq!(internal.unwrap().kind, SymbolKind::Type);
+        let token = syms.iter().find(|s| s.name == "token");
+        assert!(token.is_some(), "should find @opaque: {:?}", syms);
+        assert_eq!(token.unwrap().kind, SymbolKind::Type);
+    }
+
+    #[test]
+    fn elixir_callback() {
+        let src = "defmodule MyBehaviour do\n  @callback validate(term()) :: :ok | {:error, term()}\n  @callback format(term()) :: String.t()\nend";
+        let syms = extract("elixir", src, "test.ex");
+        let validate = syms.iter().find(|s| s.name == "validate");
+        assert!(validate.is_some(), "should find @callback validate: {:?}", syms);
+        assert_eq!(validate.unwrap().kind, SymbolKind::Method);
+        let format = syms.iter().find(|s| s.name == "format");
+        assert!(format.is_some(), "should find @callback format: {:?}", syms);
+        assert_eq!(format.unwrap().kind, SymbolKind::Method);
+    }
+
+    #[test]
+    fn elixir_defimpl() {
+        let src = "defimpl String.Chars, for: MyApp.User do\n  def to_string(user), do: user.name\nend";
+        let syms = extract("elixir", src, "test.ex");
+        let impl_sym = syms.iter().find(|s| s.name == "String.Chars");
+        assert!(impl_sym.is_some(), "should find defimpl: {:?}", syms);
+        assert_eq!(impl_sym.unwrap().kind, SymbolKind::Module);
+        let func = syms.iter().find(|s| s.name == "to_string");
+        assert!(func.is_some(), "should find function in impl: {:?}", syms);
+    }
+
+    #[test]
+    fn elixir_protocol() {
+        let src = "defprotocol Renderable do\n  @spec render(t()) :: String.t()\n  def render(data)\nend";
+        let syms = extract("elixir", src, "test.ex");
+        let proto = syms.iter().find(|s| s.name == "Renderable");
+        assert!(proto.is_some(), "should find defprotocol: {:?}", syms);
+        assert_eq!(proto.unwrap().kind, SymbolKind::Module);
     }
 
     // --- find_references tests ---
