@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-03-30
+
+### Changed
+- **Breaking:** Index database moved from `.cx-index.db` in the repo root to `~/.cache/cx/indexes/`. No more repo pollution or `.gitignore` dance.
+
+### Added
+- `cx cache path` — print the index cache path for the current project
+- `cx cache clean` — delete the cached index for the current project
+
+### Removed
+- `.cx-index.db` repo-local index file
+- Gitignore warning on first run
+
+### Fixed
+- Flaky incremental update tests on filesystems with coarse (1-second) mtime granularity
+
 ## [0.5.0] - 2026-03-25
 
 ### Added
