@@ -707,8 +707,13 @@ mod tests {
         assert_eq!(idx.entries.len(), 1);
         drop(idx);
 
-        // Add a new file
-        fs::write(dir.path().join("src/b.rs"), "fn b() {}\n").unwrap();
+        // Set mtime in the future so the incremental update detects the new file
+        // even on filesystems with coarse (1-second) timestamp granularity.
+        let b_path = dir.path().join("src/b.rs");
+        fs::write(&b_path, "fn b() {}\n").unwrap();
+        let future = SystemTime::now() + Duration::from_secs(2);
+        fs::File::open(&b_path).unwrap()
+            .set_times(fs::FileTimes::new().set_modified(future)).unwrap();
 
         let idx2 = Index::load_or_build(dir.path());
         assert_eq!(idx2.entries.len(), 2);
@@ -727,10 +732,13 @@ mod tests {
         assert_eq!(idx.entries.get(&PathBuf::from("src/a.rs")).unwrap().symbols.len(), 1);
         drop(idx);
 
-        // Modify the file — add a second function
-        // Sleep briefly to ensure mtime changes
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        fs::write(dir.path().join("src/a.rs"), "fn a() {}\nfn b() {}\n").unwrap();
+        // Modify the file — add a second function.
+        // Set mtime in the future to avoid coarse-granularity timestamp ties.
+        let a_path = dir.path().join("src/a.rs");
+        fs::write(&a_path, "fn a() {}\nfn b() {}\n").unwrap();
+        let future = SystemTime::now() + Duration::from_secs(2);
+        fs::File::open(&a_path).unwrap()
+            .set_times(fs::FileTimes::new().set_modified(future)).unwrap();
 
         let idx2 = Index::load_or_build(dir.path());
         assert_eq!(
