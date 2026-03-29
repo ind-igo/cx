@@ -58,3 +58,31 @@ jobs:
         with:
           generate_release_notes: true
           files: cx-*.tar.gz
+
+  update-homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Compute tarball SHA256
+        id: sha
+        run: |
+          sha=$(curl -sL "https://github.com/ind-igo/cx/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz" | sha256sum | cut -d' ' -f1)
+          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
+      - name: Update Homebrew tap
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHA="${{ steps.sha.outputs.sha256 }}"
+          git clone https://x-access-token:${TAP_TOKEN}@github.com/ind-igo/homebrew-cx.git
+          cd homebrew-cx
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          sed -i "s|url \".*\"|url \"https://github.com/ind-igo/cx/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz\"|" Formula/cx.rb
+          sed -i "s|sha256 \".*\"|sha256 \"${SHA}\"|" Formula/cx.rb
+          git add Formula/cx.rb
+          git commit -m "cx ${VERSION}"
+          git push
