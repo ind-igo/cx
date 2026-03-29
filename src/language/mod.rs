@@ -752,12 +752,32 @@ fn deduplicate(symbols: Vec<Symbol>) -> Vec<Symbol> {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+
+    fn init_grammar_cache() {
+        INIT.call_once(|| {
+            let config = tree_sitter_language_pack::PackConfig {
+                cache_dir: Some(crate::lang::grammar_cache_dir()),
+                ..Default::default()
+            };
+            tree_sitter_language_pack::configure(&config)
+                .expect("failed to configure grammar cache");
+        });
+    }
+
+    fn extract(lang: &str, src: &str, file: &str) -> Vec<Symbol> {
+        init_grammar_cache();
+        parse_and_extract(lang, src.as_bytes(), &PathBuf::from(file)).unwrap()
+    }
+
     // --- Rust ---
 
     #[test]
     fn rust_function() {
         let src = "pub fn calculate_fee(amount: u64) -> u64 {\n    amount * 3 / 1000\n}";
-        let syms = parse_and_extract("rust", src.as_bytes(), &PathBuf::from("test.rs")).unwrap();
+        let syms = extract("rust", src, "test.rs");
         assert_eq!(syms.len(), 1);
         assert_eq!(syms[0].name, "calculate_fee");
         assert_eq!(syms[0].kind, SymbolKind::Fn);
@@ -768,7 +788,7 @@ mod tests {
     #[test]
     fn rust_struct() {
         let src = "pub struct FeeConfig {\n    pub rate: u64,\n}";
-        let syms = parse_and_extract("rust", src.as_bytes(), &PathBuf::from("test.rs")).unwrap();
+        let syms = extract("rust", src, "test.rs");
         assert_eq!(syms.len(), 1);
         assert_eq!(syms[0].name, "FeeConfig");
         assert_eq!(syms[0].kind, SymbolKind::Struct);
@@ -777,7 +797,7 @@ mod tests {
     #[test]
     fn rust_enum() {
         let src = "pub enum FeeTier {\n    Low,\n    High,\n}";
-        let syms = parse_and_extract("rust", src.as_bytes(), &PathBuf::from("test.rs")).unwrap();
+        let syms = extract("rust", src, "test.rs");
         assert_eq!(syms.len(), 1);
         assert_eq!(syms[0].name, "FeeTier");
         assert_eq!(syms[0].kind, SymbolKind::Enum);
@@ -786,7 +806,7 @@ mod tests {
     #[test]
     fn rust_trait() {
         let src = "pub trait Configurable {\n    fn configure(&self);\n}";
-        let syms = parse_and_extract("rust", src.as_bytes(), &PathBuf::from("test.rs")).unwrap();
+        let syms = extract("rust", src, "test.rs");
         let trait_sym = syms.iter().find(|s| s.name == "Configurable").unwrap();
         assert_eq!(trait_sym.kind, SymbolKind::Trait);
     }
@@ -794,7 +814,7 @@ mod tests {
     #[test]
     fn rust_multiple_symbols() {
         let src = "pub fn foo() {}\nfn bar() {}\npub struct Baz;";
-        let syms = parse_and_extract("rust", src.as_bytes(), &PathBuf::from("test.rs")).unwrap();
+        let syms = extract("rust", src, "test.rs");
         assert!(syms.len() >= 3);
         let names: Vec<&str> = syms.iter().map(|s| s.name.as_str()).collect();
         assert!(names.contains(&"foo"));
@@ -805,7 +825,7 @@ mod tests {
     #[test]
     fn rust_byte_range() {
         let src = "pub fn test_func() -> u32 { 42 }";
-        let syms = parse_and_extract("rust", src.as_bytes(), &PathBuf::from("test.rs")).unwrap();
+        let syms = extract("rust", src, "test.rs");
         assert_eq!(syms.len(), 1);
         let (start, end) = syms[0].byte_range;
         assert!(start < end);
@@ -818,7 +838,7 @@ mod tests {
     #[test]
     fn ts_function() {
         let src = "function greet(name: string): string { return name; }";
-        let syms = parse_and_extract("typescript", src.as_bytes(), &PathBuf::from("test.ts")).unwrap();
+        let syms = extract("typescript", src, "test.ts");
         assert_eq!(syms.len(), 1);
         assert_eq!(syms[0].name, "greet");
         assert_eq!(syms[0].kind, SymbolKind::Fn);
@@ -827,7 +847,7 @@ mod tests {
     #[test]
     fn ts_class() {
         let src = "export class UserService {\n  getName() { return 'test'; }\n}";
-        let syms = parse_and_extract("typescript", src.as_bytes(), &PathBuf::from("test.ts")).unwrap();
+        let syms = extract("typescript", src, "test.ts");
         let class = syms.iter().find(|s| s.name == "UserService").unwrap();
         assert_eq!(class.kind, SymbolKind::Class);
         let method = syms.iter().find(|s| s.name == "getName").unwrap();
@@ -837,7 +857,7 @@ mod tests {
     #[test]
     fn ts_interface() {
         let src = "export interface Config {\n  host: string;\n  port: number;\n}";
-        let syms = parse_and_extract("typescript", src.as_bytes(), &PathBuf::from("test.ts")).unwrap();
+        let syms = extract("typescript", src, "test.ts");
         assert_eq!(syms.len(), 1);
         assert_eq!(syms[0].name, "Config");
         assert_eq!(syms[0].kind, SymbolKind::Interface);
@@ -846,7 +866,7 @@ mod tests {
     #[test]
     fn ts_arrow_function() {
         let src = "const add = (a: number, b: number) => a + b;";
-        let syms = parse_and_extract("typescript", src.as_bytes(), &PathBuf::from("test.ts")).unwrap();
+        let syms = extract("typescript", src, "test.ts");
         assert_eq!(syms.len(), 1);
         assert_eq!(syms[0].name, "add");
         assert_eq!(syms[0].kind, SymbolKind::Fn);
@@ -857,7 +877,7 @@ mod tests {
     #[test]
     fn ts_tsx() {
         let src = "export function App() { return <div />; }";
-        let syms = parse_and_extract("typescript", src.as_bytes(), &PathBuf::from("test.tsx")).unwrap();
+        let syms = extract("typescript", src, "test.tsx");
         assert_eq!(syms.len(), 1);
         assert_eq!(syms[0].name, "App");
     }
@@ -867,7 +887,7 @@ mod tests {
     #[test]
     fn py_function() {
         let src = "def greet(name: str) -> str:\n    return f'Hello, {name}'";
-        let syms = parse_and_extract("python", src.as_bytes(), &PathBuf::from("test.py")).unwrap();
+        let syms = extract("python", src, "test.py");
         assert_eq!(syms.len(), 1);
         assert_eq!(syms[0].name, "greet");
         assert_eq!(syms[0].kind, SymbolKind::Fn);
@@ -878,7 +898,7 @@ mod tests {
     #[test]
     fn py_class() {
         let src = "class UserService:\n    def get_name(self):\n        return 'test'";
-        let syms = parse_and_extract("python", src.as_bytes(), &PathBuf::from("test.py")).unwrap();
+        let syms = extract("python", src, "test.py");
         let class = syms.iter().find(|s| s.name == "UserService").unwrap();
         assert_eq!(class.kind, SymbolKind::Class);
     }
@@ -886,7 +906,7 @@ mod tests {
     #[test]
     fn py_constant() {
         let src = "MAX_SIZE = 100";
-        let syms = parse_and_extract("python", src.as_bytes(), &PathBuf::from("test.py")).unwrap();
+        let syms = extract("python", src, "test.py");
         assert_eq!(syms.len(), 1);
         assert_eq!(syms[0].name, "MAX_SIZE");
         assert_eq!(syms[0].kind, SymbolKind::Const);
@@ -895,7 +915,7 @@ mod tests {
     #[test]
     fn py_multiple_symbols() {
         let src = "def foo():\n    pass\n\ndef bar():\n    pass\n\nclass Baz:\n    pass";
-        let syms = parse_and_extract("python", src.as_bytes(), &PathBuf::from("test.py")).unwrap();
+        let syms = extract("python", src, "test.py");
         assert!(syms.len() >= 3);
         let names: Vec<&str> = syms.iter().map(|s| s.name.as_str()).collect();
         assert!(names.contains(&"foo"));
@@ -906,7 +926,7 @@ mod tests {
     #[test]
     fn py_type_annotation_preserved() {
         let src = "def foo(x: int, y: list[str]) -> bool:\n    return True";
-        let syms = parse_and_extract("python", src.as_bytes(), &PathBuf::from("test.py")).unwrap();
+        let syms = extract("python", src, "test.py");
         assert_eq!(syms.len(), 1);
         assert!(syms[0].signature.contains("int"), "sig: {}", syms[0].signature);
         assert!(syms[0].signature.contains("bool"), "sig: {}", syms[0].signature);
@@ -917,7 +937,7 @@ mod tests {
     #[test]
     fn go_function() {
         let src = "func Calculate(amount int) int {\n\treturn amount * 3\n}";
-        let syms = parse_and_extract("go", src.as_bytes(), &PathBuf::from("test.go")).unwrap();
+        let syms = extract("go", src, "test.go");
         assert_eq!(syms.len(), 1);
         assert_eq!(syms[0].name, "Calculate");
         assert_eq!(syms[0].kind, SymbolKind::Fn);
@@ -927,7 +947,7 @@ mod tests {
     #[test]
     fn go_method() {
         let src = "func (s *Server) Start() error {\n\treturn nil\n}";
-        let syms = parse_and_extract("go", src.as_bytes(), &PathBuf::from("test.go")).unwrap();
+        let syms = extract("go", src, "test.go");
         assert_eq!(syms.len(), 1);
         assert_eq!(syms[0].name, "Start");
         assert_eq!(syms[0].kind, SymbolKind::Method);
@@ -936,7 +956,7 @@ mod tests {
     #[test]
     fn go_type() {
         let src = "type Config struct {\n\tHost string\n}";
-        let syms = parse_and_extract("go", src.as_bytes(), &PathBuf::from("test.go")).unwrap();
+        let syms = extract("go", src, "test.go");
         assert_eq!(syms.len(), 1);
         assert_eq!(syms[0].name, "Config");
         assert_eq!(syms[0].kind, SymbolKind::Type);
@@ -947,7 +967,7 @@ mod tests {
     #[test]
     fn c_function() {
         let src = "int calculate(int amount) {\n    return amount * 3;\n}";
-        let syms = parse_and_extract("c", src.as_bytes(), &PathBuf::from("test.c")).unwrap();
+        let syms = extract("c", src, "test.c");
         assert_eq!(syms.len(), 1);
         assert_eq!(syms[0].name, "calculate");
         assert_eq!(syms[0].kind, SymbolKind::Fn);
@@ -956,7 +976,7 @@ mod tests {
     #[test]
     fn c_pointer_returning_function() {
         let src = "char *strdup(const char *s) {\n    return NULL;\n}";
-        let syms = parse_and_extract("c", src.as_bytes(), &PathBuf::from("test.c")).unwrap();
+        let syms = extract("c", src, "test.c");
         let f = syms.iter().find(|s| s.name == "strdup");
         assert!(f.is_some(), "should find pointer-returning fn: {:?}", syms);
         assert_eq!(f.unwrap().kind, SymbolKind::Fn);
@@ -965,7 +985,7 @@ mod tests {
     #[test]
     fn c_struct() {
         let src = "struct Config {\n    int rate;\n};";
-        let syms = parse_and_extract("c", src.as_bytes(), &PathBuf::from("test.c")).unwrap();
+        let syms = extract("c", src, "test.c");
         let s = syms.iter().find(|s| s.name == "Config");
         assert!(s.is_some(), "should find struct: {:?}", syms);
         assert_eq!(s.unwrap().kind, SymbolKind::Struct);
@@ -976,7 +996,7 @@ mod tests {
     #[test]
     fn cpp_class() {
         let src = "class Server {\npublic:\n    void start();\n};";
-        let syms = parse_and_extract("cpp", src.as_bytes(), &PathBuf::from("test.cpp")).unwrap();
+        let syms = extract("cpp", src, "test.cpp");
         let class = syms.iter().find(|s| s.name == "Server");
         assert!(class.is_some(), "should find class: {:?}", syms);
         assert_eq!(class.unwrap().kind, SymbolKind::Class);
@@ -987,7 +1007,7 @@ mod tests {
     #[test]
     fn java_class_and_method() {
         let src = "public class UserService {\n    public String getName() {\n        return \"test\";\n    }\n}";
-        let syms = parse_and_extract("java", src.as_bytes(), &PathBuf::from("Test.java")).unwrap();
+        let syms = extract("java", src, "Test.java");
         let class = syms.iter().find(|s| s.name == "UserService");
         assert!(class.is_some(), "should find class: {:?}", syms);
         assert_eq!(class.unwrap().kind, SymbolKind::Class);
@@ -998,7 +1018,7 @@ mod tests {
     #[test]
     fn ruby_class_and_method() {
         let src = "class UserService\n  def get_name\n    'test'\n  end\nend";
-        let syms = parse_and_extract("ruby", src.as_bytes(), &PathBuf::from("test.rb")).unwrap();
+        let syms = extract("ruby", src, "test.rb");
         let class = syms.iter().find(|s| s.name == "UserService");
         assert!(class.is_some(), "should find class: {:?}", syms);
         assert_eq!(class.unwrap().kind, SymbolKind::Class);
@@ -1011,7 +1031,7 @@ mod tests {
     #[test]
     fn lua_function() {
         let src = "function greet(name)\n    return 'Hello, ' .. name\nend";
-        let syms = parse_and_extract("lua", src.as_bytes(), &PathBuf::from("test.lua")).unwrap();
+        let syms = extract("lua", src, "test.lua");
         assert_eq!(syms.len(), 1);
         assert_eq!(syms[0].name, "greet");
         assert_eq!(syms[0].kind, SymbolKind::Fn);
@@ -1022,7 +1042,7 @@ mod tests {
     #[test]
     fn zig_function() {
         let src = "pub fn calculate(amount: u64) u64 {\n    return amount * 3;\n}";
-        let syms = parse_and_extract("zig", src.as_bytes(), &PathBuf::from("test.zig")).unwrap();
+        let syms = extract("zig", src, "test.zig");
         assert_eq!(syms.len(), 1);
         assert_eq!(syms[0].name, "calculate");
         assert_eq!(syms[0].kind, SymbolKind::Fn);
@@ -1031,7 +1051,7 @@ mod tests {
     #[test]
     fn zig_struct() {
         let src = "const Point = struct {\n    x: f32,\n    y: f32,\n};";
-        let syms = parse_and_extract("zig", src.as_bytes(), &PathBuf::from("test.zig")).unwrap();
+        let syms = extract("zig", src, "test.zig");
         assert_eq!(syms.len(), 1, "should find struct: {:?}", syms);
         assert_eq!(syms[0].name, "Point");
         assert_eq!(syms[0].kind, SymbolKind::Struct);
@@ -1040,7 +1060,7 @@ mod tests {
     #[test]
     fn zig_enum() {
         let src = "const Color = enum {\n    red,\n    green,\n    blue,\n};";
-        let syms = parse_and_extract("zig", src.as_bytes(), &PathBuf::from("test.zig")).unwrap();
+        let syms = extract("zig", src, "test.zig");
         assert_eq!(syms.len(), 1, "should find enum: {:?}", syms);
         assert_eq!(syms[0].name, "Color");
         assert_eq!(syms[0].kind, SymbolKind::Enum);
@@ -1049,7 +1069,7 @@ mod tests {
     #[test]
     fn zig_union() {
         let src = "const Msg = union {\n    int: i32,\n    float: f64,\n};";
-        let syms = parse_and_extract("zig", src.as_bytes(), &PathBuf::from("test.zig")).unwrap();
+        let syms = extract("zig", src, "test.zig");
         assert_eq!(syms.len(), 1, "should find union: {:?}", syms);
         assert_eq!(syms[0].name, "Msg");
         assert_eq!(syms[0].kind, SymbolKind::Struct);
@@ -1058,7 +1078,7 @@ mod tests {
     #[test]
     fn zig_pub_struct() {
         let src = "pub const Point = struct {\n    x: f32,\n    y: f32,\n};";
-        let syms = parse_and_extract("zig", src.as_bytes(), &PathBuf::from("test.zig")).unwrap();
+        let syms = extract("zig", src, "test.zig");
         assert_eq!(syms.len(), 1, "should find pub struct: {:?}", syms);
         assert_eq!(syms[0].name, "Point");
         assert_eq!(syms[0].kind, SymbolKind::Struct);
@@ -1067,7 +1087,7 @@ mod tests {
     #[test]
     fn zig_error_set() {
         let src = "const MyError = error {\n    OutOfMemory,\n    InvalidInput,\n};";
-        let syms = parse_and_extract("zig", src.as_bytes(), &PathBuf::from("test.zig")).unwrap();
+        let syms = extract("zig", src, "test.zig");
         assert_eq!(syms.len(), 1, "should find error set: {:?}", syms);
         assert_eq!(syms[0].name, "MyError");
         assert_eq!(syms[0].kind, SymbolKind::Enum);
@@ -1078,7 +1098,7 @@ mod tests {
     #[test]
     fn bash_function() {
         let src = "function greet() {\n    echo \"Hello\"\n}";
-        let syms = parse_and_extract("bash", src.as_bytes(), &PathBuf::from("test.sh")).unwrap();
+        let syms = extract("bash", src, "test.sh");
         assert_eq!(syms.len(), 1);
         assert_eq!(syms[0].name, "greet");
         assert_eq!(syms[0].kind, SymbolKind::Fn);
@@ -1089,7 +1109,7 @@ mod tests {
     #[test]
     fn solidity_contract_and_function() {
         let src = "contract Token {\n    function transfer(address to, uint amount) public {\n    }\n}";
-        let syms = parse_and_extract("solidity", src.as_bytes(), &PathBuf::from("test.sol")).unwrap();
+        let syms = extract("solidity", src, "test.sol");
         let contract = syms.iter().find(|s| s.name == "Token");
         assert!(contract.is_some(), "should find contract: {:?}", syms);
         let func = syms.iter().find(|s| s.name == "transfer");
@@ -1099,7 +1119,7 @@ mod tests {
     #[test]
     fn solidity_event() {
         let src = "contract Token {\n    event Transfer(address indexed from, address indexed to, uint256 value);\n}";
-        let syms = parse_and_extract("solidity", src.as_bytes(), &PathBuf::from("test.sol")).unwrap();
+        let syms = extract("solidity", src, "test.sol");
         let event = syms.iter().find(|s| s.name == "Transfer");
         assert!(event.is_some(), "should find event: {:?}", syms);
         assert_eq!(event.unwrap().kind, SymbolKind::Event);
@@ -1110,7 +1130,7 @@ mod tests {
     #[test]
     fn elixir_module_and_function() {
         let src = "defmodule MyApp.Users do\n  def get_user(id) do\n    id\n  end\nend";
-        let syms = parse_and_extract("elixir", src.as_bytes(), &PathBuf::from("test.ex")).unwrap();
+        let syms = extract("elixir", src, "test.ex");
         let module = syms.iter().find(|s| s.name == "MyApp.Users");
         assert!(module.is_some(), "should find module: {:?}", syms);
         assert_eq!(module.unwrap().kind, SymbolKind::Module);
@@ -1123,6 +1143,7 @@ mod tests {
 
     #[test]
     fn refs_rust_finds_all_usages() {
+        init_grammar_cache();
         let src = "struct Foo { x: i32 }\nfn bar(f: Foo) -> Foo { f }";
         let refs = find_references("rust", src.as_bytes(), &PathBuf::from("test.rs"), "Foo").unwrap();
         assert_eq!(refs.len(), 3, "should find struct def + 2 usages: {:?}", refs.iter().map(|r| r.line).collect::<Vec<_>>());
@@ -1130,6 +1151,7 @@ mod tests {
 
     #[test]
     fn refs_rust_no_match() {
+        init_grammar_cache();
         let src = "fn main() {}";
         let refs = find_references("rust", src.as_bytes(), &PathBuf::from("test.rs"), "nonexistent").unwrap();
         assert!(refs.is_empty());
@@ -1137,6 +1159,7 @@ mod tests {
 
     #[test]
     fn refs_line_column_correct() {
+        init_grammar_cache();
         let src = "let x = 1;\nlet y = x + x;";
         let refs = find_references("rust", src.as_bytes(), &PathBuf::from("test.rs"), "x").unwrap();
         assert_eq!(refs.len(), 3);
@@ -1147,6 +1170,7 @@ mod tests {
 
     #[test]
     fn refs_typescript_identifier() {
+        init_grammar_cache();
         let src = "const foo = 1;\nconsole.log(foo);";
         let refs = find_references("typescript", src.as_bytes(), &PathBuf::from("test.ts"), "foo").unwrap();
         assert_eq!(refs.len(), 2);
@@ -1154,6 +1178,7 @@ mod tests {
 
     #[test]
     fn refs_python_identifier() {
+        init_grammar_cache();
         let src = "def greet(name):\n    return name";
         let refs = find_references("python", src.as_bytes(), &PathBuf::from("test.py"), "name").unwrap();
         assert_eq!(refs.len(), 2);

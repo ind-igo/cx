@@ -23,10 +23,7 @@ pub fn cache_path_for(root: &Path) -> PathBuf {
 }
 
 fn index_cache_dir() -> PathBuf {
-    dirs::cache_dir()
-        .unwrap_or_else(|| PathBuf::from(".cache"))
-        .join("cx")
-        .join("indexes")
+    crate::lang::cx_cache_dir().join("indexes")
 }
 
 const META_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("meta");
@@ -544,6 +541,20 @@ fn walk(root: &Path) -> impl Iterator<Item = ignore::DirEntry> {
 mod tests {
     use super::*;
     use std::env;
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+
+    fn init_grammar_cache() {
+        INIT.call_once(|| {
+            let config = tree_sitter_language_pack::PackConfig {
+                cache_dir: Some(crate::lang::grammar_cache_dir()),
+                ..Default::default()
+            };
+            tree_sitter_language_pack::configure(&config)
+                .expect("failed to configure grammar cache");
+        });
+    }
 
     #[test]
     fn test_file_entry_encode_roundtrip() {
@@ -589,6 +600,7 @@ mod tests {
 
     #[test]
     fn test_full_crawl_finds_rust_files() {
+        init_grammar_cache();
         let dir = tempfile::tempdir().unwrap();
         let db_path = dir.path().join("test-crawl.db");
         let db = Database::create(&db_path).unwrap();
@@ -621,6 +633,7 @@ mod tests {
 
     /// Helper: create a temp project with .git dir and source files, return (tempdir, Index).
     fn build_temp_index(files: &[(&str, &str)]) -> (tempfile::TempDir, Index) {
+        init_grammar_cache();
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join(".git")).unwrap();
         for (path, content) in files {
@@ -698,6 +711,7 @@ mod tests {
 
     #[test]
     fn test_incremental_update_detects_new_file() {
+        init_grammar_cache();
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join(".git")).unwrap();
         fs::create_dir_all(dir.path().join("src")).unwrap();
@@ -712,7 +726,7 @@ mod tests {
         let b_path = dir.path().join("src/b.rs");
         fs::write(&b_path, "fn b() {}\n").unwrap();
         let future = SystemTime::now() + Duration::from_secs(2);
-        fs::File::open(&b_path).unwrap()
+        fs::File::options().write(true).open(&b_path).unwrap()
             .set_times(fs::FileTimes::new().set_modified(future)).unwrap();
 
         let idx2 = Index::load_or_build(dir.path());
@@ -723,6 +737,7 @@ mod tests {
 
     #[test]
     fn test_incremental_update_detects_modified_file() {
+        init_grammar_cache();
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join(".git")).unwrap();
         fs::create_dir_all(dir.path().join("src")).unwrap();
@@ -737,7 +752,7 @@ mod tests {
         let a_path = dir.path().join("src/a.rs");
         fs::write(&a_path, "fn a() {}\nfn b() {}\n").unwrap();
         let future = SystemTime::now() + Duration::from_secs(2);
-        fs::File::open(&a_path).unwrap()
+        fs::File::options().write(true).open(&a_path).unwrap()
             .set_times(fs::FileTimes::new().set_modified(future)).unwrap();
 
         let idx2 = Index::load_or_build(dir.path());
@@ -750,6 +765,7 @@ mod tests {
 
     #[test]
     fn test_incremental_update_detects_deleted_file() {
+        init_grammar_cache();
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join(".git")).unwrap();
         fs::create_dir_all(dir.path().join("src")).unwrap();
@@ -771,6 +787,7 @@ mod tests {
 
     #[test]
     fn test_version_mismatch_triggers_rebuild() {
+        init_grammar_cache();
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join(".git")).unwrap();
         fs::create_dir_all(dir.path().join("src")).unwrap();
