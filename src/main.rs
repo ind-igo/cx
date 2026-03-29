@@ -122,18 +122,11 @@ fn resolve_root(project: Option<PathBuf>) -> PathBuf {
     }
 }
 
-fn grammar_cache_dir() -> PathBuf {
-    dirs::cache_dir()
-        .unwrap_or_else(|| PathBuf::from(".cache"))
-        .join("cx")
-        .join("grammars")
-}
-
 fn main() {
     // Use our own cache directory so grammar downloads survive crate version bumps.
     // See KNOWN_ISSUES.md for details.
     let config = tree_sitter_language_pack::PackConfig {
-        cache_dir: Some(grammar_cache_dir()),
+        cache_dir: Some(lang::grammar_cache_dir()),
         ..Default::default()
     };
     if let Err(e) = tree_sitter_language_pack::configure(&config) {

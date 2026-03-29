@@ -153,7 +153,7 @@ fn cache_path_prints_path() {
     let out = cx_in(dir.path()).args(["cache", "path"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
-    assert!(stdout.contains("indexes/"), "should contain indexes/ path: {stdout}");
+    assert!(stdout.contains("indexes/") || stdout.contains("indexes\\"), "should contain indexes path: {stdout}");
     assert!(stdout.trim().ends_with(".db"), "should end with .db: {stdout}");
 }
 

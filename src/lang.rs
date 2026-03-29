@@ -1,4 +1,15 @@
+use std::path::PathBuf;
 use crate::language::{supported_languages, download_names_for};
+
+pub fn cx_cache_dir() -> PathBuf {
+    dirs::cache_dir()
+        .unwrap_or_else(|| PathBuf::from(".cache"))
+        .join("cx")
+}
+
+pub fn grammar_cache_dir() -> PathBuf {
+    cx_cache_dir().join("grammars")
+}
 
 pub fn add(languages: &[String]) -> i32 {
     if languages.is_empty() {
