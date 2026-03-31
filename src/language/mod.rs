@@ -313,6 +313,37 @@ const ELIXIR_QUERY: &str = r#"
     (#eq? @_keyword "callback"))) @definition.method
 "#;
 
+const SWIFT_QUERY: &str = r#"
+(class_declaration
+  "class"
+  name: (type_identifier) @name) @definition.class
+
+(class_declaration
+  "struct"
+  name: (type_identifier) @name) @definition.struct
+
+(class_declaration
+  "enum"
+  name: (type_identifier) @name) @definition.enum
+
+(protocol_declaration
+  name: (type_identifier) @name) @definition.interface
+
+(class_body
+  (function_declaration
+    name: (simple_identifier) @name) @definition.method)
+
+(protocol_body
+  (protocol_function_declaration
+    name: (simple_identifier) @name) @definition.method)
+
+(function_declaration
+  name: (simple_identifier) @name) @definition.function
+
+(typealias_declaration
+  name: (type_identifier) @name) @definition.type
+"#;
+
 // --- Registry ---
 
 static LANGUAGES: &[LanguageConfig] = &[
@@ -470,6 +501,20 @@ static LANGUAGES: &[LanguageConfig] = &[
         sig_delimiter: None,
         kind_overrides: &[],
         ref_node_types: &["identifier", "alias"],
+    },
+    LanguageConfig {
+        name: "swift",
+        extensions: &["swift"],
+        grammar_override: &[],
+        download_names: &[],
+        query: SWIFT_QUERY,
+        sig_body_child: None,
+        sig_delimiter: Some(b'{'),
+        kind_overrides: &[
+            ("definition.struct", "", SymbolKind::Struct),
+            ("definition.enum", "", SymbolKind::Enum),
+        ],
+        ref_node_types: &["simple_identifier", "type_identifier"],
     },
 ];
 
@@ -1200,6 +1245,66 @@ mod tests {
         let proto = syms.iter().find(|s| s.name == "Renderable");
         assert!(proto.is_some(), "should find defprotocol: {:?}", syms);
         assert_eq!(proto.unwrap().kind, SymbolKind::Module);
+    }
+
+    // --- Swift ---
+
+    #[test]
+    fn swift_function() {
+        let src = "func greet(name: String) -> String {\n    return \"Hello, \\(name)\"\n}";
+        let syms = extract("swift", src, "test.swift");
+        assert_eq!(syms.len(), 1);
+        assert_eq!(syms[0].name, "greet");
+        assert_eq!(syms[0].kind, SymbolKind::Fn);
+        assert!(syms[0].signature.contains("func greet"));
+    }
+
+    #[test]
+    fn swift_class_and_method() {
+        let src = "class Animal {\n    func speak() -> String {\n        return \"...\"\n    }\n}";
+        let syms = extract("swift", src, "test.swift");
+        let cls = syms.iter().find(|s| s.name == "Animal");
+        assert!(cls.is_some(), "should find class: {:?}", syms);
+        assert_eq!(cls.unwrap().kind, SymbolKind::Class);
+        let method = syms.iter().find(|s| s.name == "speak");
+        assert!(method.is_some(), "should find method: {:?}", syms);
+        assert_eq!(method.unwrap().kind, SymbolKind::Method);
+    }
+
+    #[test]
+    fn swift_struct() {
+        let src = "struct Point {\n    var x: Double\n    var y: Double\n}";
+        let syms = extract("swift", src, "test.swift");
+        assert_eq!(syms.len(), 1);
+        assert_eq!(syms[0].name, "Point");
+        assert_eq!(syms[0].kind, SymbolKind::Struct);
+    }
+
+    #[test]
+    fn swift_enum() {
+        let src = "enum Direction {\n    case north, south, east, west\n}";
+        let syms = extract("swift", src, "test.swift");
+        assert_eq!(syms.len(), 1);
+        assert_eq!(syms[0].name, "Direction");
+        assert_eq!(syms[0].kind, SymbolKind::Enum);
+    }
+
+    #[test]
+    fn swift_protocol() {
+        let src = "protocol Drawable {\n    func draw()\n}";
+        let syms = extract("swift", src, "test.swift");
+        let proto = syms.iter().find(|s| s.name == "Drawable");
+        assert!(proto.is_some(), "should find protocol: {:?}", syms);
+        assert_eq!(proto.unwrap().kind, SymbolKind::Interface);
+    }
+
+    #[test]
+    fn swift_typealias() {
+        let src = "typealias Callback = (Int) -> Void";
+        let syms = extract("swift", src, "test.swift");
+        assert_eq!(syms.len(), 1);
+        assert_eq!(syms[0].name, "Callback");
+        assert_eq!(syms[0].kind, SymbolKind::Type);
     }
 
     // --- find_references tests ---
