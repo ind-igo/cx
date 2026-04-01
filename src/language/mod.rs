@@ -705,6 +705,73 @@ pub fn parse_and_extract(lang: &str, source: &[u8], path: &Path) -> Result<Vec<S
     Ok(extract_symbols(config, query, &tree, source))
 }
 
+// --- Test detection ---
+
+/// Check if a symbol node represents a test (Rust `#[test]`/`#[cfg(test)]`, Zig `test` decl).
+fn detect_test_symbol(lang: &str, node: Node, source: &[u8]) -> bool {
+    match lang {
+        "rust" => has_rust_test_attribute(node, source),
+        // Zig test blocks use `TestDecl` node type — these are not captured by our
+        // symbol queries, so they never appear in the index. No filtering needed.
+        _ => false,
+    }
+}
+
+/// Walk previous siblings looking for `#[test]` or `#[cfg(test)]` attribute items.
+/// Also checks if the node is inside a `#[cfg(test)] mod`.
+fn has_rust_test_attribute(node: Node, source: &[u8]) -> bool {
+    // Check immediate preceding attribute siblings
+    let mut sibling = node.prev_named_sibling();
+    while let Some(sib) = sibling {
+        if sib.kind() == "attribute_item" {
+            if let Ok(text) = sib.utf8_text(source) {
+                if is_test_attribute(text) {
+                    return true;
+                }
+            }
+        } else {
+            break; // attributes are contiguous
+        }
+        sibling = sib.prev_named_sibling();
+    }
+
+    // Check if we're inside a #[cfg(test)] mod by walking up the tree
+    let mut parent = node.parent();
+    while let Some(p) = parent {
+        if p.kind() == "mod_item" {
+            let mut sib = p.prev_named_sibling();
+            while let Some(s) = sib {
+                if s.kind() == "attribute_item" {
+                    if let Ok(text) = s.utf8_text(source) {
+                        if text.contains("cfg(test)") {
+                            return true;
+                        }
+                    }
+                } else {
+                    break;
+                }
+                sib = s.prev_named_sibling();
+            }
+        }
+        parent = p.parent();
+    }
+
+    false
+}
+
+/// Check if an attribute text represents a test attribute.
+/// Matches `#[test]`, `#[tokio::test]`, `#[rstest]`, etc. but not `#[attestation]`.
+fn is_test_attribute(text: &str) -> bool {
+    let trimmed = text.trim_start_matches("#[").trim_end_matches(']');
+    // Exact match: #[test]
+    if trimmed == "test" { return true; }
+    // Path-qualified: #[tokio::test], #[tokio::test(...)]
+    if trimmed.ends_with("::test") || trimmed.contains("::test(") { return true; }
+    // cfg(test)
+    if trimmed.contains("cfg(test)") { return true; }
+    false
+}
+
 // --- Generic extractor ---
 
 fn extract_symbols(
@@ -751,12 +818,14 @@ fn extract_symbols(
 
         let byte_range = (def_n.start_byte(), def_n.end_byte());
         let signature = build_signature(config, def_n, source);
+        let is_test = detect_test_symbol(config.name, def_n, source);
 
         symbols.push(Symbol {
             name,
             kind,
             signature,
             byte_range,
+            is_test,
         });
     }
 
@@ -1513,5 +1582,61 @@ mod tests {
         let src = "def greet(name):\n    return name";
         let refs = find_references("python", src.as_bytes(), &PathBuf::from("test.py"), "name").unwrap();
         assert_eq!(refs.len(), 2);
+    }
+
+    // --- is_test detection tests ---
+
+    #[test]
+    fn rust_test_attribute_detected() {
+        let syms = extract("rust", "#[test]\nfn test_foo() { assert!(true); }", "test.rs");
+        let sym = syms.iter().find(|s| s.name == "test_foo").unwrap();
+        assert!(sym.is_test, "function with #[test] should be marked as test");
+    }
+
+    #[test]
+    fn rust_cfg_test_mod_detected() {
+        let src = r#"
+fn main() {}
+
+#[cfg(test)]
+mod tests {
+    fn helper() {}
+}
+"#;
+        let syms = extract("rust", src, "lib.rs");
+        let main_sym = syms.iter().find(|s| s.name == "main").unwrap();
+        assert!(!main_sym.is_test, "main should not be marked as test");
+        let tests_mod = syms.iter().find(|s| s.name == "tests").unwrap();
+        assert!(tests_mod.is_test, "#[cfg(test)] mod should be marked as test");
+        // helper inside #[cfg(test)] mod should also be marked as test
+        if let Some(helper) = syms.iter().find(|s| s.name == "helper") {
+            assert!(helper.is_test, "function inside #[cfg(test)] mod should be marked as test");
+        }
+    }
+
+    #[test]
+    fn rust_normal_fn_not_test() {
+        let syms = extract("rust", "pub fn add(a: i32, b: i32) -> i32 { a + b }", "lib.rs");
+        let sym = syms.iter().find(|s| s.name == "add").unwrap();
+        assert!(!sym.is_test, "normal function should not be marked as test");
+    }
+
+    #[test]
+    fn rust_test_and_normal_mixed() {
+        let src = r#"
+pub fn real_fn() {}
+
+#[test]
+fn test_real_fn() {}
+
+pub struct MyStruct;
+"#;
+        let syms = extract("rust", src, "lib.rs");
+        let real_fn = syms.iter().find(|s| s.name == "real_fn").unwrap();
+        assert!(!real_fn.is_test);
+        let test_fn = syms.iter().find(|s| s.name == "test_real_fn").unwrap();
+        assert!(test_fn.is_test);
+        let my_struct = syms.iter().find(|s| s.name == "MyStruct").unwrap();
+        assert!(!my_struct.is_test);
     }
 }

@@ -290,6 +290,147 @@ pub fn references(
     0
 }
 
+// --- Directory overview ---
+
+const DIR_OVERVIEW_MAX_SYMBOLS: usize = 10;
+
+#[derive(Serialize)]
+struct DirOverviewRow {
+    file: String,
+    symbols: String,
+}
+
+#[derive(Serialize)]
+struct DirOverviewFullRow {
+    file: String,
+    name: String,
+    kind: String,
+    signature: String,
+}
+
+/// Priority for symbol kinds in directory overview: lower = shown first.
+fn symbol_priority(kind: SymbolKind) -> u8 {
+    match kind {
+        SymbolKind::Struct | SymbolKind::Enum | SymbolKind::Trait
+        | SymbolKind::Interface | SymbolKind::Class => 0,
+        SymbolKind::Fn | SymbolKind::Const | SymbolKind::Type
+        | SymbolKind::Module | SymbolKind::Event => 1,
+        SymbolKind::Method => 2,
+    }
+}
+
+/// Check if a file path looks like a test file based on naming conventions.
+fn is_test_file(path: &Path) -> bool {
+    for component in path.components() {
+        if let std::path::Component::Normal(s) = component {
+            let s = s.to_str().unwrap_or("");
+            if s == "tests" || s == "test" || s == "__tests__" {
+                return true;
+            }
+        }
+    }
+    let name = match path.file_name().and_then(|n| n.to_str()) {
+        Some(n) => n,
+        None => return false,
+    };
+    // Go: *_test.go
+    if name.ends_with("_test.go") { return true; }
+    // JS/TS: *.test.* or *.spec.*
+    for ext in &[".test.ts", ".test.tsx", ".test.js", ".test.jsx",
+                 ".spec.ts", ".spec.tsx", ".spec.js", ".spec.jsx"] {
+        if name.ends_with(ext) { return true; }
+    }
+    // Python: test_*.py
+    if name.starts_with("test_") && name.ends_with(".py") { return true; }
+    // Ruby: *_spec.rb
+    if name.ends_with("_spec.rb") { return true; }
+    false
+}
+
+/// Show a compact or full overview of all files under a directory.
+pub fn dir_overview(
+    index: &Index,
+    dir: &Path,
+    full: bool,
+    json: bool,
+) -> i32 {
+    let rel_dir = make_relative(dir, &index.root);
+    // Normalize "." to empty path so starts_with matches all entries
+    let rel_dir = if rel_dir == Path::new(".") { PathBuf::new() } else { rel_dir };
+
+    let mut files: Vec<(&PathBuf, &FileData)> = index
+        .entries
+        .iter()
+        .filter(|(path, _)| rel_dir.as_os_str().is_empty() || path.starts_with(&rel_dir))
+        .filter(|(path, _)| !is_test_file(path))
+        .collect();
+
+    if files.is_empty() {
+        eprintln!("cx: no indexed files under {}", display_path(&rel_dir));
+        return 1;
+    }
+
+    files.sort_by_key(|(path, _)| *path);
+
+    if full {
+        let mut rows: Vec<DirOverviewFullRow> = Vec::new();
+        for (path, data) in &files {
+            let mut syms: Vec<&Symbol> = data.symbols.iter()
+                .filter(|s| !s.is_test)
+                .collect();
+            if syms.is_empty() { continue; }
+            syms.sort_by(|a, b| symbol_priority(a.kind).cmp(&symbol_priority(b.kind))
+                .then(a.name.cmp(&b.name)));
+            let total = syms.len();
+            let capped = total > DIR_OVERVIEW_MAX_SYMBOLS;
+            for sym in syms.iter().take(DIR_OVERVIEW_MAX_SYMBOLS) {
+                rows.push(DirOverviewFullRow {
+                    file: display_path(path),
+                    name: sym.name.clone(),
+                    kind: sym.kind.as_str().to_string(),
+                    signature: sym.signature.clone(),
+                });
+            }
+            if capped {
+                rows.push(DirOverviewFullRow {
+                    file: display_path(path),
+                    name: format!("... (+{} more)", total - DIR_OVERVIEW_MAX_SYMBOLS),
+                    kind: String::new(),
+                    signature: String::new(),
+                });
+            }
+        }
+        if json { print_json(&rows) } else { print_toon(&rows) }
+    } else {
+        let mut rows: Vec<DirOverviewRow> = Vec::new();
+        for (path, data) in &files {
+            let mut syms: Vec<&Symbol> = data.symbols.iter()
+                .filter(|s| !s.is_test)
+                .collect();
+            if syms.is_empty() { continue; }
+            syms.sort_by(|a, b| symbol_priority(a.kind).cmp(&symbol_priority(b.kind))
+                .then(a.name.cmp(&b.name)));
+            let total = syms.len();
+            let names: Vec<&str> = syms.iter()
+                .take(DIR_OVERVIEW_MAX_SYMBOLS)
+                .map(|s| s.name.as_str())
+                .collect();
+            let suffix = if total > DIR_OVERVIEW_MAX_SYMBOLS {
+                format!(", ... (+{} more)", total - DIR_OVERVIEW_MAX_SYMBOLS)
+            } else {
+                String::new()
+            };
+            rows.push(DirOverviewRow {
+                file: display_path(path),
+                symbols: format!("{}{}", names.join(", "), suffix),
+            });
+        }
+        if json { print_json(&rows) } else { print_toon(&rows) }
+    }
+
+    0
+}
+
 fn read_body(root: &Path, file: &Path, byte_range: (usize, usize)) -> Option<(String, usize)> {
     let abs_path = root.join(file);
     let source = fs::read(&abs_path).ok()?;
@@ -328,5 +469,63 @@ mod tests {
         assert_eq!(display_path(Path::new("src/main.rs")), "src/main.rs");
         assert_eq!(display_path(Path::new("src\\main.rs")), "src/main.rs");
         assert_eq!(display_path(Path::new("src\\sub\\file.rs")), "src/sub/file.rs");
+    }
+
+    // --- is_test_file tests ---
+
+    #[test]
+    fn test_file_go() {
+        assert!(is_test_file(Path::new("pkg/handler_test.go")));
+        assert!(!is_test_file(Path::new("pkg/handler.go")));
+    }
+
+    #[test]
+    fn test_file_ts_js() {
+        assert!(is_test_file(Path::new("src/app.test.ts")));
+        assert!(is_test_file(Path::new("src/app.test.tsx")));
+        assert!(is_test_file(Path::new("src/app.spec.js")));
+        assert!(is_test_file(Path::new("src/app.spec.jsx")));
+        assert!(!is_test_file(Path::new("src/app.ts")));
+    }
+
+    #[test]
+    fn test_file_python() {
+        assert!(is_test_file(Path::new("test_utils.py")));
+        assert!(!is_test_file(Path::new("utils_test.py"))); // Python convention is test_ prefix
+        assert!(!is_test_file(Path::new("test_utils.rs"))); // wrong extension
+    }
+
+    #[test]
+    fn test_file_ruby() {
+        assert!(is_test_file(Path::new("models/user_spec.rb")));
+        assert!(!is_test_file(Path::new("models/user.rb")));
+    }
+
+    #[test]
+    fn test_file_directory() {
+        assert!(is_test_file(Path::new("tests/unit/foo.rs")));
+        assert!(is_test_file(Path::new("test/foo.js")));
+        assert!(is_test_file(Path::new("src/__tests__/app.tsx")));
+        assert!(!is_test_file(Path::new("src/foo.rs")));
+    }
+
+    #[test]
+    fn test_file_normal_files() {
+        assert!(!is_test_file(Path::new("src/main.rs")));
+        assert!(!is_test_file(Path::new("lib/utils.ts")));
+        assert!(!is_test_file(Path::new("index.js")));
+    }
+
+    // --- symbol_priority tests ---
+
+    #[test]
+    fn symbol_priority_ordering() {
+        // Types should come before functions, which come before methods
+        assert!(symbol_priority(SymbolKind::Struct) < symbol_priority(SymbolKind::Fn));
+        assert!(symbol_priority(SymbolKind::Enum) < symbol_priority(SymbolKind::Fn));
+        assert!(symbol_priority(SymbolKind::Trait) < symbol_priority(SymbolKind::Fn));
+        assert!(symbol_priority(SymbolKind::Interface) < symbol_priority(SymbolKind::Fn));
+        assert!(symbol_priority(SymbolKind::Class) < symbol_priority(SymbolKind::Fn));
+        assert!(symbol_priority(SymbolKind::Fn) < symbol_priority(SymbolKind::Method));
     }
 }

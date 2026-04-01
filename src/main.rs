@@ -29,11 +29,14 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// File table of contents — all symbols + signatures
+    /// Table of contents — symbols + signatures for a file, or symbol names for a directory
     #[command(alias = "o")]
     Overview {
-        /// File to summarize
-        file: PathBuf,
+        /// File or directory to summarize
+        path: PathBuf,
+        /// Show full per-file overview (name, kind, signature) for directories
+        #[arg(long)]
+        full: bool,
     },
     /// Search symbols across project
     #[command(alias = "s")]
@@ -137,9 +140,16 @@ fn main() {
     let root = resolve_root(cli.root);
 
     let exit_code = match cli.command {
-        Commands::Overview { file } => {
+        Commands::Overview { path, full } => {
             let idx = index::Index::load_or_build(&root);
-            query::symbols(&idx, Some(&file), None, None, cli.json)
+            let abs = if path.is_absolute() { path.clone() } else {
+                std::env::current_dir().unwrap_or_default().join(&path)
+            };
+            if abs.is_dir() {
+                query::dir_overview(&idx, &path, full, cli.json)
+            } else {
+                query::symbols(&idx, Some(&path), None, None, cli.json)
+            }
         }
         Commands::Symbols { file, name, kind } => {
             let idx = index::Index::load_or_build(&root);

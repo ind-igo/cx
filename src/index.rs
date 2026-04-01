@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::language::{detect_language, parse_and_extract, primary_extension, LangError};
 
-pub const INDEX_VERSION: u32 = 4;
+pub const INDEX_VERSION: u32 = 5;
 
 /// Compute the cache path for a given project root.
 /// Returns `~/.cache/cx/indexes/<hash>.db` where hash is derived from the canonical path.
@@ -71,6 +71,9 @@ pub struct Symbol {
     pub kind: SymbolKind,
     pub signature: String,
     pub byte_range: (usize, usize),
+    /// Whether this symbol is a test (e.g. `#[test]` in Rust, `test` block in Zig).
+    #[serde(default)]
+    pub is_test: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
@@ -582,20 +585,32 @@ mod tests {
                 kind: SymbolKind::Fn,
                 signature: "pub fn foo(x: i32) -> bool".to_string(),
                 byte_range: (100, 500),
+                is_test: false,
             },
             Symbol {
                 name: "Bar".to_string(),
                 kind: SymbolKind::Struct,
                 signature: "pub struct Bar".to_string(),
                 byte_range: (600, 800),
+                is_test: false,
+            },
+            Symbol {
+                name: "test_bar".to_string(),
+                kind: SymbolKind::Fn,
+                signature: "fn test_bar()".to_string(),
+                byte_range: (900, 1000),
+                is_test: true,
             },
         ];
         let bytes = bincode::serialize(&symbols).unwrap();
         let decoded: Vec<Symbol> = bincode::deserialize(&bytes).unwrap();
-        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded.len(), 3);
         assert_eq!(decoded[0].name, "foo");
+        assert_eq!(decoded[0].is_test, false);
         assert_eq!(decoded[1].kind, SymbolKind::Struct);
         assert_eq!(decoded[0].byte_range, (100, 500));
+        assert_eq!(decoded[2].name, "test_bar");
+        assert_eq!(decoded[2].is_test, true);
     }
 
     #[test]
