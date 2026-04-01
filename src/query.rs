@@ -312,12 +312,13 @@ pub fn references(
         let mut seen = std::collections::HashSet::new();
         let unique_rows: Vec<UniqueCallerRow> = rows
             .into_iter()
-            .filter(|r| r.caller.is_some())
-            .filter(|r| seen.insert((r.file.clone(), r.caller.clone().unwrap())))
-            .map(|r| UniqueCallerRow {
-                file: r.file,
-                caller: r.caller.unwrap(),
-                line: r.line,
+            .filter_map(|r| {
+                let caller = r.caller?;
+                if seen.insert((r.file.clone(), caller.clone())) {
+                    Some(UniqueCallerRow { file: r.file, caller, line: r.line })
+                } else {
+                    None
+                }
             })
             .collect();
         if unique_rows.is_empty() {
@@ -457,32 +458,38 @@ pub fn dir_overview(
 
     direct_files.sort_by_key(|(path, _)| *path);
 
+    // Shared: format subdir display path
+    let format_subdir = |dir_name: &str| -> String {
+        if rel_dir.as_os_str().is_empty() {
+            format!("{}/", dir_name)
+        } else {
+            format!("{}/{}/", display_path(&rel_dir), dir_name)
+        }
+    };
+
+    fn prepare_symbols(data: &FileData) -> Vec<&Symbol> {
+        let mut syms: Vec<&Symbol> = data.symbols.iter()
+            .filter(|s| !s.is_test)
+            .collect();
+        syms.sort_by(|a, b| symbol_priority(a.kind).cmp(&symbol_priority(b.kind))
+            .then(a.name.cmp(&b.name)));
+        syms
+    }
+
     if full {
         let mut rows: Vec<DirOverviewFullRow> = Vec::new();
-        // Subdirectories first
         for (dir_name, (file_count, sym_count)) in &subdirs {
-            let dir_display = if rel_dir.as_os_str().is_empty() {
-                format!("{}/", dir_name)
-            } else {
-                format!("{}/{}/", display_path(&rel_dir), dir_name)
-            };
             rows.push(DirOverviewFullRow {
-                file: dir_display,
+                file: format_subdir(dir_name),
                 name: format!("({} files, {} symbols)", file_count, sym_count),
                 kind: String::new(),
                 signature: String::new(),
             });
         }
-        // Then direct files
         for (path, data) in &direct_files {
-            let mut syms: Vec<&Symbol> = data.symbols.iter()
-                .filter(|s| !s.is_test)
-                .collect();
+            let syms = prepare_symbols(data);
             if syms.is_empty() { continue; }
-            syms.sort_by(|a, b| symbol_priority(a.kind).cmp(&symbol_priority(b.kind))
-                .then(a.name.cmp(&b.name)));
             let total = syms.len();
-            let capped = total > DIR_OVERVIEW_MAX_SYMBOLS;
             for sym in syms.iter().take(DIR_OVERVIEW_MAX_SYMBOLS) {
                 rows.push(DirOverviewFullRow {
                     file: display_path(path),
@@ -491,7 +498,7 @@ pub fn dir_overview(
                     signature: sym.signature.clone(),
                 });
             }
-            if capped {
+            if total > DIR_OVERVIEW_MAX_SYMBOLS {
                 rows.push(DirOverviewFullRow {
                     file: display_path(path),
                     name: format!("... (+{} more)", total - DIR_OVERVIEW_MAX_SYMBOLS),
@@ -503,33 +510,23 @@ pub fn dir_overview(
         if json { print_json(&rows) } else { print_toon(&rows) }
     } else {
         let mut rows: Vec<DirOverviewRow> = Vec::new();
-        // Subdirectories first
         for (dir_name, (file_count, sym_count)) in &subdirs {
-            let dir_display = if rel_dir.as_os_str().is_empty() {
-                format!("{}/", dir_name)
-            } else {
-                format!("{}/{}/", display_path(&rel_dir), dir_name)
-            };
             rows.push(DirOverviewRow {
-                file: dir_display,
+                file: format_subdir(dir_name),
                 symbols: format!("({} files, {} symbols)", file_count, sym_count),
             });
         }
-        // Then direct files
         for (path, data) in &direct_files {
-            let mut syms: Vec<&Symbol> = data.symbols.iter()
-                .filter(|s| !s.is_test)
-                .collect();
+            let syms = prepare_symbols(data);
             if syms.is_empty() { continue; }
-            syms.sort_by(|a, b| symbol_priority(a.kind).cmp(&symbol_priority(b.kind))
-                .then(a.name.cmp(&b.name)));
             let total = syms.len();
-            let mut names: Vec<&str> = syms.iter()
+            // Deduplicate names (e.g. overloaded type params)
+            let mut seen = std::collections::HashSet::new();
+            let names: Vec<&str> = syms.iter()
                 .take(DIR_OVERVIEW_MAX_SYMBOLS)
                 .map(|s| s.name.as_str())
+                .filter(|n| seen.insert(*n))
                 .collect();
-            // Deduplicate names (e.g. overloaded type params)
-            names.dedup();
             let shown = names.len();
             let suffix = if total > shown {
                 format!(", ... (+{} more)", total - shown)

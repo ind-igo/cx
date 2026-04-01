@@ -16,7 +16,7 @@ When `cx` is available in the project, prefer it over reading files directly.
 - **Exploring a new codebase** — start with `cx overview .` to see top-level structure, then drill into subdirectories. Cheaper than `ls` + reading files.
 - **Before reading a file** — run `cx overview` first. You often don't need the full file.
 - **Before editing a function** — `cx definition --name X` gives you the exact text for Edit tool's `old_string` without reading the whole file.
-- **Before refactoring** — `cx references --name X` finds all usages so you know the impact before changing anything. Replaces the pattern of grepping then reading file after file.
+- **Before refactoring** — `cx references --name X --unique` shows which functions depend on X (one row per caller). Without `--unique`, shows every usage with the enclosing function name and context line.
 - **Exploring a codebase** — use `cx symbols` to find what you need across files, then `cx definition` to read specific symbols. Avoid reading file after file.
 - **After context compression** — if you previously read a file but the content was compressed out, use `cx overview` to re-orient and `cx definition` for the specific symbols you need. Don't re-read the full file.
 
@@ -27,7 +27,7 @@ cx overview PATH                                    file or directory table of c
 cx overview DIR --full                              directory overview with signatures
 cx symbols [--kind K] [--name GLOB] [--file PATH]   search symbols project-wide
 cx definition --name NAME [--from PATH] [--kind K]  get a function/type body
-cx references --name NAME [--file PATH]              find all usages of a symbol
+cx references --name NAME [--file PATH] [--unique]   find all usages (--unique: one per caller)
 cx lang list                                         show supported languages
 cx lang add LANG [LANG...]                           install language grammars
 ```
