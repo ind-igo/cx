@@ -342,6 +342,14 @@ const SWIFT_QUERY: &str = r#"
 
 (typealias_declaration
   name: (type_identifier) @name) @definition.type
+
+(class_body
+  (init_declaration
+    name: _ @name) @definition.method)
+
+(class_body
+  (deinit_declaration
+    "deinit" @name) @definition.method)
 "#;
 
 // --- Registry ---
@@ -1296,6 +1304,9 @@ mod tests {
         let proto = syms.iter().find(|s| s.name == "Drawable");
         assert!(proto.is_some(), "should find protocol: {:?}", syms);
         assert_eq!(proto.unwrap().kind, SymbolKind::Interface);
+        let draw = syms.iter().find(|s| s.name == "draw");
+        assert!(draw.is_some(), "should find protocol method: {:?}", syms);
+        assert_eq!(draw.unwrap().kind, SymbolKind::Method);
     }
 
     #[test]
@@ -1305,6 +1316,24 @@ mod tests {
         assert_eq!(syms.len(), 1);
         assert_eq!(syms[0].name, "Callback");
         assert_eq!(syms[0].kind, SymbolKind::Type);
+    }
+
+    #[test]
+    fn swift_init() {
+        let src = "class Foo {\n    init(x: Int) {\n        self.x = x\n    }\n}";
+        let syms = extract("swift", src, "test.swift");
+        let init_sym = syms.iter().find(|s| s.name == "init");
+        assert!(init_sym.is_some(), "should find init: {:?}", syms);
+        assert_eq!(init_sym.unwrap().kind, SymbolKind::Method);
+    }
+
+    #[test]
+    fn swift_deinit() {
+        let src = "class Foo {\n    deinit {\n        print(\"bye\")\n    }\n}";
+        let syms = extract("swift", src, "test.swift");
+        let deinit_sym = syms.iter().find(|s| s.name == "deinit");
+        assert!(deinit_sym.is_some(), "should find deinit: {:?}", syms);
+        assert_eq!(deinit_sym.unwrap().kind, SymbolKind::Method);
     }
 
     // --- find_references tests ---
