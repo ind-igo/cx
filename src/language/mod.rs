@@ -314,6 +314,8 @@ const ELIXIR_QUERY: &str = r#"
 "#;
 
 const SWIFT_QUERY: &str = r#"
+; --- Type declarations ---
+
 (class_declaration
   "class"
   name: (type_identifier) @name) @definition.class
@@ -326,10 +328,27 @@ const SWIFT_QUERY: &str = r#"
   "enum"
   name: (type_identifier) @name) @definition.enum
 
+(class_declaration
+  "actor"
+  name: (type_identifier) @name) @definition.class
+
+(class_declaration
+  "extension"
+  name: _ @name) @definition.module
+
 (protocol_declaration
   name: (type_identifier) @name) @definition.interface
 
+(typealias_declaration
+  name: (type_identifier) @name) @definition.type
+
+; --- Methods (functions inside type bodies) ---
+
 (class_body
+  (function_declaration
+    name: (simple_identifier) @name) @definition.method)
+
+(enum_class_body
   (function_declaration
     name: (simple_identifier) @name) @definition.method)
 
@@ -337,19 +356,51 @@ const SWIFT_QUERY: &str = r#"
   (protocol_function_declaration
     name: (simple_identifier) @name) @definition.method)
 
-(function_declaration
-  name: (simple_identifier) @name) @definition.function
-
-(typealias_declaration
-  name: (type_identifier) @name) @definition.type
+; --- Init / Deinit ---
 
 (class_body
+  (init_declaration
+    name: _ @name) @definition.method)
+
+(enum_class_body
   (init_declaration
     name: _ @name) @definition.method)
 
 (class_body
   (deinit_declaration
     "deinit" @name) @definition.method)
+
+; --- Subscripts ---
+
+(class_body
+  (subscript_declaration
+    "subscript" @name) @definition.method)
+
+(enum_class_body
+  (subscript_declaration
+    "subscript" @name) @definition.method)
+
+; --- Properties ---
+
+(class_body
+  (property_declaration
+    name: (pattern
+      bound_identifier: (simple_identifier) @name)) @definition.constant)
+
+(enum_class_body
+  (property_declaration
+    name: (pattern
+      bound_identifier: (simple_identifier) @name)) @definition.constant)
+
+(protocol_body
+  (protocol_property_declaration
+    name: (pattern
+      bound_identifier: (simple_identifier) @name)) @definition.constant)
+
+; --- Top-level functions ---
+
+(function_declaration
+  name: (simple_identifier) @name) @definition.function
 "#;
 
 // --- Registry ---
@@ -1283,9 +1334,15 @@ mod tests {
     fn swift_struct() {
         let src = "struct Point {\n    var x: Double\n    var y: Double\n}";
         let syms = extract("swift", src, "test.swift");
-        assert_eq!(syms.len(), 1);
-        assert_eq!(syms[0].name, "Point");
-        assert_eq!(syms[0].kind, SymbolKind::Struct);
+        let s = syms.iter().find(|s| s.name == "Point");
+        assert!(s.is_some(), "should find struct: {:?}", syms);
+        assert_eq!(s.unwrap().kind, SymbolKind::Struct);
+        let x = syms.iter().find(|s| s.name == "x");
+        assert!(x.is_some(), "should find property x: {:?}", syms);
+        assert_eq!(x.unwrap().kind, SymbolKind::Const);
+        let y = syms.iter().find(|s| s.name == "y");
+        assert!(y.is_some(), "should find property y: {:?}", syms);
+        assert_eq!(y.unwrap().kind, SymbolKind::Const);
     }
 
     #[test]
@@ -1295,6 +1352,21 @@ mod tests {
         assert_eq!(syms.len(), 1);
         assert_eq!(syms[0].name, "Direction");
         assert_eq!(syms[0].kind, SymbolKind::Enum);
+    }
+
+    #[test]
+    fn swift_enum_methods() {
+        let src = "enum Direction {\n    case north, south\n    func opposite() -> Direction {\n        switch self {\n        case .north: return .south\n        default: return .north\n        }\n    }\n    init?(rawValue: String) {\n        switch rawValue {\n        case \"n\": self = .north\n        default: return nil\n        }\n    }\n}";
+        let syms = extract("swift", src, "test.swift");
+        let e = syms.iter().find(|s| s.name == "Direction");
+        assert!(e.is_some(), "should find enum: {:?}", syms);
+        assert_eq!(e.unwrap().kind, SymbolKind::Enum);
+        let method = syms.iter().find(|s| s.name == "opposite");
+        assert!(method.is_some(), "should find method in enum: {:?}", syms);
+        assert_eq!(method.unwrap().kind, SymbolKind::Method);
+        let init_sym = syms.iter().find(|s| s.name == "init");
+        assert!(init_sym.is_some(), "should find init in enum: {:?}", syms);
+        assert_eq!(init_sym.unwrap().kind, SymbolKind::Method);
     }
 
     #[test]
@@ -1334,6 +1406,68 @@ mod tests {
         let deinit_sym = syms.iter().find(|s| s.name == "deinit");
         assert!(deinit_sym.is_some(), "should find deinit: {:?}", syms);
         assert_eq!(deinit_sym.unwrap().kind, SymbolKind::Method);
+    }
+
+    #[test]
+    fn swift_actor() {
+        let src = "actor BankAccount {\n    var balance: Double\n    func deposit(_ amount: Double) {\n        balance += amount\n    }\n}";
+        let syms = extract("swift", src, "test.swift");
+        let actor = syms.iter().find(|s| s.name == "BankAccount");
+        assert!(actor.is_some(), "should find actor: {:?}", syms);
+        assert_eq!(actor.unwrap().kind, SymbolKind::Class);
+        let method = syms.iter().find(|s| s.name == "deposit");
+        assert!(method.is_some(), "should find actor method: {:?}", syms);
+        assert_eq!(method.unwrap().kind, SymbolKind::Method);
+        let prop = syms.iter().find(|s| s.name == "balance");
+        assert!(prop.is_some(), "should find actor property: {:?}", syms);
+        assert_eq!(prop.unwrap().kind, SymbolKind::Const);
+    }
+
+    #[test]
+    fn swift_extension() {
+        let src = "extension String {\n    func reversed() -> String {\n        return String(self.reversed())\n    }\n}";
+        let syms = extract("swift", src, "test.swift");
+        let ext = syms.iter().find(|s| s.name == "String");
+        assert!(ext.is_some(), "should find extension: {:?}", syms);
+        assert_eq!(ext.unwrap().kind, SymbolKind::Module);
+        let method = syms.iter().find(|s| s.name == "reversed");
+        assert!(method.is_some(), "should find extension method: {:?}", syms);
+        assert_eq!(method.unwrap().kind, SymbolKind::Method);
+    }
+
+    #[test]
+    fn swift_extension_constrained() {
+        let src = "extension Array where Element: Comparable {\n    func sorted() -> [Element] {\n        return []\n    }\n}";
+        let syms = extract("swift", src, "test.swift");
+        let ext = syms.iter().find(|s| s.kind == SymbolKind::Module);
+        assert!(ext.is_some(), "should find constrained extension: {:?}", syms);
+        let method = syms.iter().find(|s| s.name == "sorted");
+        assert!(method.is_some(), "should find method in constrained extension: {:?}", syms);
+        assert_eq!(method.unwrap().kind, SymbolKind::Method);
+    }
+
+    #[test]
+    fn swift_subscript() {
+        let src = "struct Matrix {\n    subscript(row: Int, col: Int) -> Double {\n        return 0.0\n    }\n}";
+        let syms = extract("swift", src, "test.swift");
+        let sub = syms.iter().find(|s| s.name == "subscript");
+        assert!(sub.is_some(), "should find subscript: {:?}", syms);
+        assert_eq!(sub.unwrap().kind, SymbolKind::Method);
+    }
+
+    #[test]
+    fn swift_protocol_property() {
+        let src = "protocol Named {\n    var name: String { get }\n    func greet() -> String\n}";
+        let syms = extract("swift", src, "test.swift");
+        let proto = syms.iter().find(|s| s.name == "Named");
+        assert!(proto.is_some(), "should find protocol: {:?}", syms);
+        assert_eq!(proto.unwrap().kind, SymbolKind::Interface);
+        let prop = syms.iter().find(|s| s.name == "name");
+        assert!(prop.is_some(), "should find protocol property: {:?}", syms);
+        assert_eq!(prop.unwrap().kind, SymbolKind::Const);
+        let method = syms.iter().find(|s| s.name == "greet");
+        assert!(method.is_some(), "should find protocol method: {:?}", syms);
+        assert_eq!(method.unwrap().kind, SymbolKind::Method);
     }
 
     // --- find_references tests ---
