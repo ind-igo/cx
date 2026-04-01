@@ -2,8 +2,9 @@
 
 When `cx` is available in the project, prefer it over reading files directly.
 
-## Escalation hierarchy: overview → symbols → definition / references → read
+## Escalation hierarchy: directory overview → file overview → symbols → definition / references → read
 
+- **Explore a directory** → `cx overview <dir>` (~20 tokens per entry)
 - **Understand a file's structure** → `cx overview <file>` (~200 tokens)
 - **Find symbols across the project** → `cx symbols [--kind K] [--name GLOB] [--file PATH]`
 - **Read a specific function/type** → `cx definition --name <name>` (~500 tokens)
@@ -12,6 +13,7 @@ When `cx` is available in the project, prefer it over reading files directly.
 
 ## When to use cx instead of Read
 
+- **Exploring a new codebase** — start with `cx overview .` to see top-level structure, then drill into subdirectories. Cheaper than `ls` + reading files.
 - **Before reading a file** — run `cx overview` first. You often don't need the full file.
 - **Before editing a function** — `cx definition --name X` gives you the exact text for Edit tool's `old_string` without reading the whole file.
 - **Before refactoring** — `cx references --name X` finds all usages so you know the impact before changing anything. Replaces the pattern of grepping then reading file after file.
@@ -21,7 +23,8 @@ When `cx` is available in the project, prefer it over reading files directly.
 ## Quick reference
 
 ```
-cx overview PATH                                    file table of contents
+cx overview PATH                                    file or directory table of contents
+cx overview DIR --full                              directory overview with signatures
 cx symbols [--kind K] [--name GLOB] [--file PATH]   search symbols project-wide
 cx definition --name NAME [--from PATH] [--kind K]  get a function/type body
 cx references --name NAME [--file PATH]              find all usages of a symbol

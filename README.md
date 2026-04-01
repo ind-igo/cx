@@ -54,6 +54,7 @@ Agents burn most of their context reading files. We analyzed 105 of our own Clau
 cx gives agents a cost ladder. Start cheap, escalate only when needed:
 
 ```
+cx overview src/              ~20 tokens    "what's in this folder?"
 cx overview src/fees.rs       ~200 tokens   "what's in this file?"
 cx definition --name calc     ~200 tokens   "show me this function"
 cx symbols --kind fn          ~70 tokens    "what functions exist in the codebase?"
@@ -75,7 +76,33 @@ In sessions with cx enabled, we measured **58% fewer Read calls** and **40-55% f
 
 ## Usage
 
-### Overview -- file table of contents
+### Overview -- file and directory table of contents
+
+Directories show one level: direct files with symbol names, subdirectories with counts. Test files and test symbols are filtered out automatically.
+
+```
+$ cx overview .
+
+[7]{file,symbols}:
+  container/,"(3 files, 28 symbols)"
+  scripts/,"(6 files, 16 symbols)"
+  src/,"(19 files, 147 symbols)"
+  setup.sh,"check_build_tools, check_node, detect_platform, ..."
+```
+
+Drill into a subdirectory:
+
+```
+$ cx overview src/
+
+[7]{file,symbols}:
+  language/,"(1 files, 19 symbols)"
+  util/,"(3 files, 4 symbols)"
+  index.rs,"Index, Symbol, SymbolKind, load_or_build, ..."
+  main.rs,"Cli, Commands, main, resolve_root, ..."
+```
+
+Single file -- full symbol table with kinds and signatures:
 
 ```
 $ cx overview src/main.rs
@@ -87,6 +114,8 @@ $ cx overview src/main.rs
   resolve_root,fn,"fn resolve_root(project: Option<PathBuf>) -> PathBuf"
   ...
 ```
+
+Use `--full` on directories for the detailed per-file view with signatures.
 
 ### Symbols -- search across the project
 
