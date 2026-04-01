@@ -8,7 +8,8 @@ When `cx` is available in the project, prefer it over reading files directly.
 - **Understand a file's structure** → `cx overview <file>` (~200 tokens)
 - **Find symbols across the project** → `cx symbols [--kind K] [--name GLOB] [--file PATH]`
 - **Read a specific function/type** → `cx definition --name <name>` (~500 tokens)
-- **Find all usages of a symbol** → `cx references --name <name>` before refactoring or tracing impact
+- **Find all usages of a symbol** → `cx references --name <name>` shows every usage with enclosing function and context
+- **Check blast radius before refactoring** → `cx references --name <name> --unique` shows one row per dependent function
 - **Fall back to Read tool** only when you need the full file or surrounding context beyond the symbol body
 
 ## When to use cx instead of Read
@@ -16,7 +17,8 @@ When `cx` is available in the project, prefer it over reading files directly.
 - **Exploring a new codebase** — start with `cx overview .` to see top-level structure, then drill into subdirectories. Cheaper than `ls` + reading files.
 - **Before reading a file** — run `cx overview` first. You often don't need the full file.
 - **Before editing a function** — `cx definition --name X` gives you the exact text for Edit tool's `old_string` without reading the whole file.
-- **Before refactoring** — `cx references --name X --unique` shows which functions depend on X (one row per caller). Without `--unique`, shows every usage with the enclosing function name and context line.
+- **Before refactoring** — `cx references --name X --unique` shows which functions depend on X (one row per caller). Use without `--unique` to see every usage with context lines.
+- **Understanding how a symbol is used** — `cx references --name X` shows each usage site with the enclosing function and the source line, so you can see if it's called, used as a type, imported, etc.
 - **Exploring a codebase** — use `cx symbols` to find what you need across files, then `cx definition` to read specific symbols. Avoid reading file after file.
 - **After context compression** — if you previously read a file but the content was compressed out, use `cx overview` to re-orient and `cx definition` for the specific symbols you need. Don't re-read the full file.
 
