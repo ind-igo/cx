@@ -143,7 +143,7 @@ fn main() {
         Commands::Overview { path, full } => {
             let idx = index::Index::load_or_build(&root);
             let abs = if path.is_absolute() { path.clone() } else {
-                std::env::current_dir().unwrap_or_default().join(&path)
+                root.join(&path)
             };
             if abs.is_dir() {
                 query::dir_overview(&idx, &path, full, cli.json)

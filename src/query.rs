@@ -347,7 +347,28 @@ fn is_test_file(path: &Path) -> bool {
     false
 }
 
-/// Show a compact or full overview of all files under a directory.
+/// Extract the immediate child component of `path` relative to `dir`.
+/// Returns `None` if the path is not under `dir`.
+/// For a direct child file, returns the full relative path.
+/// For a nested file, returns just the first subdirectory component (with trailing /).
+fn child_component(path: &Path, dir: &Path) -> Option<PathBuf> {
+    let relative = if dir.as_os_str().is_empty() {
+        path.to_path_buf()
+    } else {
+        path.strip_prefix(dir).ok()?.to_path_buf()
+    };
+    let mut components = relative.components();
+    let first = components.next()?;
+    if components.next().is_some() {
+        // Nested — return just the subdir name
+        Some(PathBuf::from(first.as_os_str()))
+    } else {
+        // Direct child file
+        Some(relative)
+    }
+}
+
+/// Show a single-level overview of files and subdirectories.
 pub fn dir_overview(
     index: &Index,
     dir: &Path,
@@ -358,23 +379,60 @@ pub fn dir_overview(
     // Normalize "." to empty path so starts_with matches all entries
     let rel_dir = if rel_dir == Path::new(".") { PathBuf::new() } else { rel_dir };
 
-    let mut files: Vec<(&PathBuf, &FileData)> = index
+    let all_entries: Vec<(&PathBuf, &FileData)> = index
         .entries
         .iter()
         .filter(|(path, _)| rel_dir.as_os_str().is_empty() || path.starts_with(&rel_dir))
         .filter(|(path, _)| !is_test_file(path))
         .collect();
 
-    if files.is_empty() {
+    if all_entries.is_empty() {
         eprintln!("cx: no indexed files under {}", display_path(&rel_dir));
         return 1;
     }
 
-    files.sort_by_key(|(path, _)| *path);
+    // Partition into direct files and subdirectory aggregates
+    let mut direct_files: Vec<(&PathBuf, &FileData)> = Vec::new();
+    let mut subdirs: std::collections::BTreeMap<String, (usize, usize)> = std::collections::BTreeMap::new();
+
+    for (path, data) in &all_entries {
+        let child = match child_component(path, &rel_dir) {
+            Some(c) => c,
+            None => continue,
+        };
+        let non_test_count = data.symbols.iter().filter(|s| !s.is_test).count();
+        if child.components().count() == 1 && child.extension().is_some() {
+            // Direct child file
+            direct_files.push((path, data));
+        } else {
+            // Subdirectory — aggregate
+            let dir_name = child.to_string_lossy().to_string();
+            let entry = subdirs.entry(dir_name).or_insert((0, 0));
+            entry.0 += 1;
+            entry.1 += non_test_count;
+        }
+    }
+
+    direct_files.sort_by_key(|(path, _)| *path);
 
     if full {
         let mut rows: Vec<DirOverviewFullRow> = Vec::new();
-        for (path, data) in &files {
+        // Subdirectories first
+        for (dir_name, (file_count, sym_count)) in &subdirs {
+            let dir_display = if rel_dir.as_os_str().is_empty() {
+                format!("{}/", dir_name)
+            } else {
+                format!("{}/{}/", display_path(&rel_dir), dir_name)
+            };
+            rows.push(DirOverviewFullRow {
+                file: dir_display,
+                name: format!("({} files, {} symbols)", file_count, sym_count),
+                kind: String::new(),
+                signature: String::new(),
+            });
+        }
+        // Then direct files
+        for (path, data) in &direct_files {
             let mut syms: Vec<&Symbol> = data.symbols.iter()
                 .filter(|s| !s.is_test)
                 .collect();
@@ -403,7 +461,20 @@ pub fn dir_overview(
         if json { print_json(&rows) } else { print_toon(&rows) }
     } else {
         let mut rows: Vec<DirOverviewRow> = Vec::new();
-        for (path, data) in &files {
+        // Subdirectories first
+        for (dir_name, (file_count, sym_count)) in &subdirs {
+            let dir_display = if rel_dir.as_os_str().is_empty() {
+                format!("{}/", dir_name)
+            } else {
+                format!("{}/{}/", display_path(&rel_dir), dir_name)
+            };
+            rows.push(DirOverviewRow {
+                file: dir_display,
+                symbols: format!("({} files, {} symbols)", file_count, sym_count),
+            });
+        }
+        // Then direct files
+        for (path, data) in &direct_files {
             let mut syms: Vec<&Symbol> = data.symbols.iter()
                 .filter(|s| !s.is_test)
                 .collect();
@@ -411,12 +482,15 @@ pub fn dir_overview(
             syms.sort_by(|a, b| symbol_priority(a.kind).cmp(&symbol_priority(b.kind))
                 .then(a.name.cmp(&b.name)));
             let total = syms.len();
-            let names: Vec<&str> = syms.iter()
+            let mut names: Vec<&str> = syms.iter()
                 .take(DIR_OVERVIEW_MAX_SYMBOLS)
                 .map(|s| s.name.as_str())
                 .collect();
-            let suffix = if total > DIR_OVERVIEW_MAX_SYMBOLS {
-                format!(", ... (+{} more)", total - DIR_OVERVIEW_MAX_SYMBOLS)
+            // Deduplicate names (e.g. overloaded type params)
+            names.dedup();
+            let shown = names.len();
+            let suffix = if total > shown {
+                format!(", ... (+{} more)", total - shown)
             } else {
                 String::new()
             };
