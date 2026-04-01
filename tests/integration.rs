@@ -272,6 +272,61 @@ fn references_dedup_same_line() {
     assert_eq!(line1_refs.len(), 1, "same-line refs should be deduped: {stdout}");
 }
 
+// --- Directory overview ---
+
+#[test]
+fn overview_directory_single_level() {
+    let dir = temp_project(&[
+        ("src/main.rs", "fn main() {}\n"),
+        ("src/lib.rs", "pub fn hello() {}\npub struct Config;\n"),
+        ("src/util/helpers.rs", "pub fn help() {}\n"),
+        ("src/util/math.rs", "pub fn add() {}\npub fn sub() {}\n"),
+    ]);
+    let out = cx_in(dir.path()).args(["overview", "src/"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    // Should show util/ as a subdirectory, not individual files inside it
+    assert!(stdout.contains("util/"), "should group util as subdir: {stdout}");
+    assert!(!stdout.contains("helpers.rs"), "should not show nested files: {stdout}");
+    // Direct files should be listed
+    assert!(stdout.contains("main.rs"), "should show direct file: {stdout}");
+    assert!(stdout.contains("lib.rs"), "should show direct file: {stdout}");
+}
+
+#[test]
+fn overview_directory_root() {
+    let dir = temp_project(&[
+        ("src/main.rs", "fn main() {}\n"),
+        ("src/lib.rs", "pub fn hello() {}\n"),
+    ]);
+    let out = cx_in(dir.path()).args(["overview", "."]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(stdout.contains("src/"), "should show src as subdir: {stdout}");
+}
+
+#[test]
+fn overview_directory_filters_test_files() {
+    let dir = temp_project(&[
+        ("src/app.ts", "export function main() {}\n"),
+        ("src/app.test.ts", "describe('app', () => {})\n"),
+        ("tests/integration.rs", "fn test_it() {}\n"),
+    ]);
+    let out = cx_in(dir.path()).args(["overview", "."]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    // Test files and test directories should be excluded
+    assert!(!stdout.contains("app.test.ts"), "should filter test files: {stdout}");
+    assert!(!stdout.contains("tests/"), "should filter test dirs: {stdout}");
+}
+
+#[test]
+fn overview_directory_nonexistent() {
+    let dir = temp_project(&[("src/main.rs", "fn main() {}\n")]);
+    let out = cx_in(dir.path()).args(["overview", "nonexistent/"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+}
+
 // --- JSON output for definition ---
 
 #[test]
