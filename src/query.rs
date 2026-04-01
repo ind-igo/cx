@@ -201,7 +201,27 @@ struct ReferenceRow {
     file: String,
     line: usize,
     kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    caller: Option<String>,
     context: String,
+}
+
+/// Find the enclosing symbol for a byte offset in a file's symbol list.
+fn find_enclosing_symbol(symbols: &[Symbol], byte_offset: usize) -> Option<&str> {
+    symbols
+        .iter()
+        .filter(|s| s.byte_range.0 <= byte_offset && byte_offset < s.byte_range.1)
+        // Pick the tightest enclosing symbol (smallest range)
+        .min_by_key(|s| s.byte_range.1 - s.byte_range.0)
+        .map(|s| s.name.as_str())
+}
+
+/// Unique caller row for --unique mode.
+#[derive(Serialize)]
+struct UniqueCallerRow {
+    file: String,
+    caller: String,
+    line: usize,
 }
 
 /// Find all usages of a symbol name across project files.
@@ -209,6 +229,7 @@ pub fn references(
     index: &Index,
     name: &str,
     file: Option<&Path>,
+    unique: bool,
     json: bool,
 ) -> i32 {
     let rel_path = file.map(|f| make_relative(f, &index.root));
@@ -268,10 +289,13 @@ pub fn references(
                 .get(r.line.wrapping_sub(1))
                 .map(|l| l.trim().to_string())
                 .unwrap_or_default();
+            let caller = find_enclosing_symbol(&data.symbols, r.byte_offset)
+                .map(|s| s.to_string());
             rows.push(ReferenceRow {
                 file: display_path(path),
                 line: r.line,
                 kind: r.parent_kind,
+                caller,
                 context,
             });
         }
@@ -285,7 +309,27 @@ pub fn references(
     rows.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
     rows.dedup_by(|a, b| a.file == b.file && a.line == b.line);
 
-    if json { print_json(&rows) } else { print_toon(&rows) }
+    if unique {
+        // Deduplicate to one row per (file, caller) pair
+        let mut seen = std::collections::HashSet::new();
+        let unique_rows: Vec<UniqueCallerRow> = rows
+            .into_iter()
+            .filter(|r| r.caller.is_some())
+            .filter(|r| seen.insert((r.file.clone(), r.caller.clone().unwrap())))
+            .map(|r| UniqueCallerRow {
+                file: r.file,
+                caller: r.caller.unwrap(),
+                line: r.line,
+            })
+            .collect();
+        if unique_rows.is_empty() {
+            eprintln!("cx: no callers found");
+            return 0;
+        }
+        if json { print_json(&unique_rows) } else { print_toon(&unique_rows) }
+    } else {
+        if json { print_json(&rows) } else { print_toon(&rows) }
+    }
 
     0
 }

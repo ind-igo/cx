@@ -6,6 +6,7 @@ use super::LanguageConfig;
 
 pub struct Reference {
     pub line: usize, // 1-based
+    pub byte_offset: usize,
     pub parent_kind: String,
 }
 

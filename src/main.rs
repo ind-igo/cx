@@ -76,6 +76,9 @@ enum Commands {
         /// Limit search to a specific file
         #[arg(long)]
         file: Option<PathBuf>,
+        /// Deduplicate by enclosing function (one row per caller)
+        #[arg(long)]
+        unique: bool,
     },
     /// Manage language grammars
     Lang {
@@ -159,9 +162,9 @@ fn main() {
             let idx = index::Index::load_or_build(&root);
             query::definition(&idx, &name, from.as_deref(), kind, max_lines, cli.json)
         }
-        Commands::References { name, file } => {
+        Commands::References { name, file, unique } => {
             let idx = index::Index::load_or_build(&root);
-            query::references(&idx, &name, file.as_deref(), cli.json)
+            query::references(&idx, &name, file.as_deref(), unique, cli.json)
         }
         Commands::Lang { action } => {
             match action {

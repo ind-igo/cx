@@ -306,6 +306,7 @@ pub fn find_references(lang: &str, source: &[u8], path: &Path, name: &str) -> Re
                 .unwrap_or_default();
             refs.push(extract::Reference {
                 line: node.start_position().row + 1,
+                byte_offset: node.start_byte(),
                 parent_kind,
             });
         }
