@@ -200,7 +200,6 @@ pub fn definition(
 struct ReferenceRow {
     file: String,
     line: usize,
-    kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     caller: Option<String>,
     context: String,
@@ -294,7 +293,6 @@ pub fn references(
             rows.push(ReferenceRow {
                 file: display_path(path),
                 line: r.line,
-                kind: r.parent_kind,
                 caller,
                 context,
             });

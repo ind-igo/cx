@@ -159,15 +159,27 @@ Use `--from src/foo.rs` to disambiguate when multiple files define the same name
 ```
 $ cx references --name Symbol
 
-[17]{file,line,kind,context}:
-  src/index.rs,23,type_arguments,"pub exports: HashMap<PathBuf, Vec<Symbol>>,"
-  src/index.rs,33,struct_item,"pub struct Symbol {"
-  src/language/mod.rs,1,use_list,"use crate::index::{Language, Symbol, SymbolKind};"
-  src/query.rs,43,field_declaration,"symbol: Symbol,"
+[17]{file,line,caller,context}:
+  src/index.rs,23,,FileData,"pub symbols: Vec<Symbol>,"
+  src/index.rs,69,Symbol,"pub struct Symbol {"
+  src/language/mod.rs,4,,"use crate::index::{Symbol, SymbolKind};"
+  src/query.rs,38,SymbolRow,"symbol: &'a Symbol,"
   ...
 ```
 
-The `kind` column shows the tree-sitter parent node type, indicating how the symbol is used (e.g. `struct_item` = definition, `use_list` = import, `type_arguments` = type reference).
+The `caller` column shows which function or type encloses the reference. Use `--unique` to deduplicate by caller — one row per function that depends on the symbol:
+
+```
+$ cx references --name Symbol --unique
+
+[6]{file,caller,line}:
+  src/index.rs,FileData,23
+  src/index.rs,load_entries,175
+  src/language/extract.rs,extract_symbols,83
+  src/language/mod.rs,parse_and_extract,325
+  src/query.rs,definition,125
+  src/query.rs,dir_overview,480
+```
 
 Use `--file src/index.rs` to scope the search to a single file. Includes both definition and usage sites. Duplicate references on the same line are collapsed.
 
