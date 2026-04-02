@@ -69,6 +69,14 @@ jobs:
             cx-*.tar.gz
             cx-*.zip
 
+  publish-crate:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
   update-homebrew:
     needs: release
     runs-on: ubuntu-latest
