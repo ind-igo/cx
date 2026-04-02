@@ -84,9 +84,9 @@ jobs:
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=crates.io" | jq -r '.value')
           echo "::add-mask::$token"
           echo "token=$token" >> "$GITHUB_OUTPUT"
-      - run: cargo publish --registry crates-io
+      - run: cargo publish
         env:
-          CARGO_REGISTRIES_CRATES_IO_TOKEN: "oidc:${{ steps.oidc.outputs.token }}"
+          CARGO_REGISTRY_TOKEN: "oidc:${{ steps.oidc.outputs.token }}"
 
   update-homebrew:
     needs: release
