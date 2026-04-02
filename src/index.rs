@@ -296,25 +296,30 @@ impl Index {
     fn full_crawl(&mut self) {
         let mut missing_langs: HashMap<String, usize> = HashMap::new();
 
-        for entry in walk(&self.root) {
-            let path = entry.path();
-            let Some(lang) = detect_language(path) else {
-                continue;
-            };
+        // Collect files first so we can show progress
+        let files: Vec<_> = walk(&self.root)
+            .filter_map(|entry| {
+                let path = entry.path();
+                let lang = detect_language(path)?;
+                let rel_path = path.strip_prefix(&self.root).ok()?.to_path_buf();
+                let mtime = entry.metadata().ok()
+                    .and_then(|m| m.modified().ok())
+                    .unwrap_or(SystemTime::UNIX_EPOCH);
+                Some((path.to_path_buf(), rel_path, lang, mtime))
+            })
+            .collect();
 
-            let rel_path = match path.strip_prefix(&self.root) {
-                Ok(p) => p.to_path_buf(),
-                Err(_) => continue,
-            };
+        let total = files.len();
+        if total > 0 {
+            eprintln!("cx: indexing {} files...", total);
+        }
 
-            let mtime = entry
-                .metadata()
-                .ok()
-                .and_then(|m| m.modified().ok())
-                .unwrap_or(SystemTime::UNIX_EPOCH);
-
-            let symbols = match fs::read(path) {
-                Ok(source) => match parse_and_extract(lang, &source, path) {
+        for (i, (abs_path, rel_path, lang, mtime)) in files.iter().enumerate() {
+            if total >= 100 && (i + 1) % (total / 10) == 0 {
+                eprintln!("cx: indexed {}/{}...", i + 1, total);
+            }
+            let symbols = match fs::read(abs_path) {
+                Ok(source) => match parse_and_extract(lang, &source, abs_path) {
                     Ok(syms) => syms,
                     Err(LangError::NotInstalled(name)) => {
                         *missing_langs.entry(name).or_insert(0) += 1;
@@ -323,12 +328,12 @@ impl Index {
                     Err(_) => continue,
                 },
                 Err(e) => {
-                    eprintln!("cx: warning: failed to read {}: {}", path.display(), e);
+                    eprintln!("cx: warning: failed to read {}: {}", abs_path.display(), e);
                     continue;
                 }
             };
-            self.entries.insert(rel_path, FileData {
-                meta: FileEntry::new(mtime, lang),
+            self.entries.insert(rel_path.clone(), FileData {
+                meta: FileEntry::new(*mtime, lang),
                 symbols,
             });
         }
@@ -392,29 +397,41 @@ impl Index {
         }
 
         // Add new or update changed files
+        let stale: Vec<_> = on_disk.iter()
+            .filter(|(path, (mtime, _))| {
+                !matches!(self.entries.get(*path), Some(data) if data.meta.mtime() == *mtime)
+            })
+            .map(|(path, (mtime, lang))| (path.clone(), *mtime, *lang))
+            .collect();
+
+        let total = stale.len();
+        if total > 0 {
+            eprintln!("cx: updating {} files...", total);
+        }
+
         let mut changed_paths: Vec<PathBuf> = Vec::new();
-        for (path, (mtime, lang)) in &on_disk {
-            let needs_update = !matches!(self.entries.get(path), Some(data) if data.meta.mtime() == *mtime);
-            if needs_update {
-                let file_entry = FileEntry::new(*mtime, lang);
-                let abs_path = self.root.join(path);
-                let symbols = match fs::read(&abs_path) {
-                    Ok(source) => match parse_and_extract(lang, &source, &abs_path) {
-                        Ok(syms) => syms,
-                        Err(LangError::NotInstalled(name)) => {
-                            missing_langs.insert(name);
-                            continue;
-                        }
-                        Err(_) => continue,
-                    },
-                    Err(_) => continue,
-                };
-                self.entries.insert(path.clone(), FileData {
-                    meta: file_entry,
-                    symbols,
-                });
-                changed_paths.push(path.clone());
+        for (i, (path, mtime, lang)) in stale.iter().enumerate() {
+            if total >= 100 && (i + 1) % (total / 10) == 0 {
+                eprintln!("cx: indexed {}/{}...", i + 1, total);
             }
+            let file_entry = FileEntry::new(*mtime, lang);
+            let abs_path = self.root.join(path);
+            let symbols = match fs::read(&abs_path) {
+                Ok(source) => match parse_and_extract(lang, &source, &abs_path) {
+                    Ok(syms) => syms,
+                    Err(LangError::NotInstalled(name)) => {
+                        missing_langs.insert(name);
+                        continue;
+                    }
+                    Err(_) => continue,
+                },
+                Err(_) => continue,
+            };
+            self.entries.insert(path.clone(), FileData {
+                meta: file_entry,
+                symbols,
+            });
+            changed_paths.push(path.clone());
         }
 
         for lang in &missing_langs {
