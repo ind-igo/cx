@@ -1,6 +1,7 @@
 mod bash;
 mod c;
 mod cpp;
+mod dart;
 mod elixir;
 mod go;
 mod java;
@@ -16,6 +17,7 @@ mod zig;
 pub use bash::QUERY as BASH;
 pub use c::QUERY as C;
 pub use cpp::QUERY as CPP;
+pub use dart::QUERY as DART;
 pub use elixir::QUERY as ELIXIR;
 pub use go::QUERY as GO;
 pub use java::QUERY as JAVA;

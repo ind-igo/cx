@@ -178,6 +178,17 @@ static LANGUAGES: &[LanguageConfig] = &[
         ref_node_types: &["identifier"],
     },
     LanguageConfig {
+        name: "dart",
+        extensions: &["dart"],
+        grammar_override: &[],
+        download_names: &[],
+        query: queries::DART,
+        sig_body_child: None,
+        sig_delimiter: Some(b'{'),
+        kind_overrides: &[],
+        ref_node_types: &["identifier", "type_identifier"],
+    },
+    LanguageConfig {
         name: "elixir",
         extensions: &["ex", "exs"],
         grammar_override: &[],

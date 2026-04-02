@@ -226,6 +226,10 @@ fn deduplicate(symbols: Vec<Symbol>) -> Vec<Symbol> {
     for sym in symbols {
         if let Some(&idx) = seen.get(&sym.byte_range) {
             if deduped[idx].kind == SymbolKind::Fn && sym.kind == SymbolKind::Method {
+                // Promote Fn → Method (e.g. nested function_signature also matched by method pattern)
+                deduped[idx] = sym;
+            } else if deduped[idx].kind == sym.kind {
+                // Later pattern wins for same byte range + kind (more specific name capture)
                 deduped[idx] = sym;
             }
         } else {

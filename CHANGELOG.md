@@ -7,16 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-04-02
+
 ### Added
-- **Directory overview** — `cx overview <dir>` shows a single-level table of contents: direct files with symbol names, subdirectories with file/symbol counts. Use `--full` for detailed view with signatures.
-- Test symbol filtering in directory overviews — excludes test files by path pattern (`*_test.go`, `*.test.ts`, `test_*.py`, etc.) and Rust `#[test]`/`#[cfg(test)]` inline tests
-- Symbol capping at 10 per file in directory overview with kind-priority ordering (types first, then functions, then methods)
+- **Dart language support** (#9, requested by @evanscai): classes (sealed/base/interface/mixin), mixins, extensions, extension types, enums, functions, methods, getters/setters, constructors (named/factory), operators, type aliases
+- **Comprehensive Swift support** (based on #11 by @upupc): actors, extensions, properties, subscripts, enum bodies, init/deinit (#10, #12)
+- **Elixir enhancements** (#6 by @RamXX): `@type`/`@typep`/`@opaque`, `@callback`, `defimpl`
+- **Directory overview** (#8, reported by @it-ony): `cx overview dir/` — single-level table of contents with symbol names, `--full` for signatures
+- Test symbol filtering in directory overviews — excludes test files by path pattern and Rust `#[test]`/`#[cfg(test)]` inline tests
+
+### Changed
+- Language module refactored into focused files (`queries/*.rs`, `extract.rs`, `tests.rs`)
+- `RwLock` + thread-local `Parser` for better parallel indexing performance
+- Symbol dedup now prefers later (more specific) query matches for same byte range
+- Index version bumped to 6 (forces reindex)
 
 ### Fixed
 - `--root` flag now correctly resolves relative paths against the project root instead of cwd
 
-### Changed
-- `is_test` field added to `Symbol` (index version bumped to 5, forces reindex)
 
 ## [0.6.0] - 2026-03-30
 

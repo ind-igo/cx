@@ -599,6 +599,194 @@ fn swift_protocol_property() {
     assert_eq!(method.unwrap().kind, SymbolKind::Method);
 }
 
+// --- Dart ---
+
+#[test]
+fn dart_class_and_method() {
+    let src = "class Animal {\n  String speak() { return \"...\"; }\n}";
+    let syms = extract("dart", src, "test.dart");
+    assert_eq!(syms.len(), 2, "class + method: {:?}", syms);
+    let cls = syms.iter().find(|s| s.name == "Animal");
+    assert!(cls.is_some(), "should find class: {:?}", syms);
+    assert_eq!(cls.unwrap().kind, SymbolKind::Class);
+    let method = syms.iter().find(|s| s.name == "speak");
+    assert!(method.is_some(), "should find method: {:?}", syms);
+    assert_eq!(method.unwrap().kind, SymbolKind::Method);
+}
+
+#[test]
+fn dart_mixin() {
+    let src = "mixin Swimming {\n  void swim() { print(\"swimming\"); }\n}";
+    let syms = extract("dart", src, "test.dart");
+    assert_eq!(syms.len(), 2, "mixin + method: {:?}", syms);
+    let mixin = syms.iter().find(|s| s.name == "Swimming");
+    assert!(mixin.is_some(), "should find mixin: {:?}", syms);
+    assert_eq!(mixin.unwrap().kind, SymbolKind::Class);
+    let method = syms.iter().find(|s| s.name == "swim");
+    assert!(method.is_some(), "should find mixin method: {:?}", syms);
+    assert_eq!(method.unwrap().kind, SymbolKind::Method);
+}
+
+#[test]
+fn dart_extension() {
+    let src = "extension StringExt on String {\n  String reversed() => split('').reversed.join('');\n}";
+    let syms = extract("dart", src, "test.dart");
+    assert_eq!(syms.len(), 2, "extension + method: {:?}", syms);
+    let ext = syms.iter().find(|s| s.name == "StringExt");
+    assert!(ext.is_some(), "should find extension: {:?}", syms);
+    assert_eq!(ext.unwrap().kind, SymbolKind::Module);
+}
+
+#[test]
+fn dart_enum() {
+    let src = "enum Color { red, green, blue }";
+    let syms = extract("dart", src, "test.dart");
+    assert_eq!(syms.len(), 1);
+    assert_eq!(syms[0].name, "Color");
+    assert_eq!(syms[0].kind, SymbolKind::Enum);
+}
+
+#[test]
+fn dart_top_level_function() {
+    let src = "void greet(String name) {\n  print(\"Hello $name\");\n}";
+    let syms = extract("dart", src, "test.dart");
+    assert_eq!(syms.len(), 1);
+    assert_eq!(syms[0].name, "greet");
+    assert_eq!(syms[0].kind, SymbolKind::Fn);
+    assert!(syms[0].signature.contains("greet"), "sig: {}", syms[0].signature);
+}
+
+#[test]
+fn dart_typedef() {
+    let src = "typedef Callback = void Function(int);";
+    let syms = extract("dart", src, "test.dart");
+    assert_eq!(syms.len(), 1);
+    assert_eq!(syms[0].name, "Callback");
+    assert_eq!(syms[0].kind, SymbolKind::Type);
+}
+
+#[test]
+fn dart_getter_setter() {
+    let src = "class Foo {\n  String get displayName => \"\";\n  set displayName(String value) {}\n}";
+    let syms = extract("dart", src, "test.dart");
+    assert_eq!(syms.len(), 3, "class + getter + setter: {:?}", syms);
+    let getters_setters: Vec<_> = syms.iter().filter(|s| s.name == "displayName").collect();
+    assert_eq!(getters_setters.len(), 2, "should find getter and setter: {:?}", syms);
+    assert!(getters_setters.iter().all(|s| s.kind == SymbolKind::Method));
+}
+
+#[test]
+fn dart_constructor() {
+    let src = "class Animal {\n  Animal(this.name);\n}";
+    let syms = extract("dart", src, "test.dart");
+    assert_eq!(syms.len(), 2, "class + constructor: {:?}", syms);
+    let ctor = syms.iter().find(|s| s.name == "Animal" && s.kind == SymbolKind::Method);
+    assert!(ctor.is_some(), "should find constructor: {:?}", syms);
+}
+
+#[test]
+fn dart_named_constructor() {
+    let src = "class Point {\n  final int x;\n  Point(this.x);\n  Point.origin() : x = 0;\n}";
+    let syms = extract("dart", src, "test.dart");
+    let named = syms.iter().find(|s| s.name == "origin" && s.kind == SymbolKind::Method);
+    assert!(named.is_some(), "should find named constructor 'origin': {:?}", syms);
+    let unnamed = syms.iter().find(|s| s.name == "Point" && s.kind == SymbolKind::Method);
+    assert!(unnamed.is_some(), "should find unnamed constructor: {:?}", syms);
+}
+
+#[test]
+fn dart_factory_constructor() {
+    let src = "class Animal {\n  factory Animal.create(String name) => Animal(name);\n}";
+    let syms = extract("dart", src, "test.dart");
+    let factory = syms.iter().find(|s| s.kind == SymbolKind::Method && s.name == "create");
+    assert!(factory.is_some(), "should find named factory 'create': {:?}", syms);
+}
+
+#[test]
+fn dart_abstract_method() {
+    let src = "abstract class Repo {\n  Future<int> getById(int id);\n  Future<void> save(int item);\n}";
+    let syms = extract("dart", src, "test.dart");
+    assert_eq!(syms.len(), 3, "class + 2 abstract methods: {:?}", syms);
+    let get_by_id = syms.iter().find(|s| s.name == "getById");
+    assert!(get_by_id.is_some(), "should find abstract method: {:?}", syms);
+    assert_eq!(get_by_id.unwrap().kind, SymbolKind::Method);
+    let save = syms.iter().find(|s| s.name == "save");
+    assert!(save.is_some(), "should find abstract method save: {:?}", syms);
+    assert_eq!(save.unwrap().kind, SymbolKind::Method);
+}
+
+#[test]
+fn dart_static_method() {
+    let src = "class Utils {\n  static void doStuff() {}\n}";
+    let syms = extract("dart", src, "test.dart");
+    assert_eq!(syms.len(), 2, "class + static method (no duplicates): {:?}", syms);
+    let method = syms.iter().find(|s| s.name == "doStuff");
+    assert!(method.is_some(), "should find static method: {:?}", syms);
+    assert_eq!(method.unwrap().kind, SymbolKind::Method);
+}
+
+#[test]
+fn dart_operator_overload() {
+    let src = "class Vector {\n  Vector operator +(Vector other) => Vector();\n}";
+    let syms = extract("dart", src, "test.dart");
+    assert_eq!(syms.len(), 2, "class + operator: {:?}", syms);
+    let op = syms.iter().find(|s| s.name == "operator" && s.kind == SymbolKind::Method);
+    assert!(op.is_some(), "should find operator overload: {:?}", syms);
+    assert!(op.unwrap().signature.contains("operator +"), "sig should show operator: {}", op.unwrap().signature);
+}
+
+#[test]
+fn dart_extension_getter() {
+    let src = "extension StringUtils on String {\n  bool get isBlank => trim().isEmpty;\n  String capitalize() => this[0] + substring(1);\n}";
+    let syms = extract("dart", src, "test.dart");
+    assert_eq!(syms.len(), 3, "extension + getter + method: {:?}", syms);
+    let getter = syms.iter().find(|s| s.name == "isBlank");
+    assert!(getter.is_some(), "should find extension getter: {:?}", syms);
+    assert_eq!(getter.unwrap().kind, SymbolKind::Method);
+    let method = syms.iter().find(|s| s.name == "capitalize");
+    assert!(method.is_some(), "should find extension method: {:?}", syms);
+    assert_eq!(method.unwrap().kind, SymbolKind::Method);
+}
+
+#[test]
+fn dart_enum_getter() {
+    let src = "enum Status {\n  active;\n  String get label => name.toUpperCase();\n}";
+    let syms = extract("dart", src, "test.dart");
+    assert_eq!(syms.len(), 2, "enum + getter: {:?}", syms);
+    let e = syms.iter().find(|s| s.name == "Status");
+    assert!(e.is_some(), "should find enum: {:?}", syms);
+    assert_eq!(e.unwrap().kind, SymbolKind::Enum);
+    let getter = syms.iter().find(|s| s.name == "label");
+    assert!(getter.is_some(), "should find enum getter: {:?}", syms);
+    assert_eq!(getter.unwrap().kind, SymbolKind::Method);
+}
+
+#[test]
+fn dart_sealed_class() {
+    let src = "sealed class Shape {}\nbase class Circle extends Shape {}\ninterface class Printable {}\nmixin class Both {}";
+    let syms = extract("dart", src, "test.dart");
+    assert_eq!(syms.len(), 4, "4 class variants: {:?}", syms);
+    let names: Vec<&str> = syms.iter().map(|s| s.name.as_str()).collect();
+    assert!(names.contains(&"Shape"), "should find sealed class: {:?}", syms);
+    assert!(names.contains(&"Circle"), "should find base class: {:?}", syms);
+    assert!(names.contains(&"Printable"), "should find interface class: {:?}", syms);
+    assert!(names.contains(&"Both"), "should find mixin class: {:?}", syms);
+    assert!(syms.iter().all(|s| s.kind == SymbolKind::Class));
+}
+
+#[test]
+fn dart_extension_type() {
+    let src = "extension type Wrapper(int value) {\n  int get doubled => value * 2;\n}";
+    let syms = extract("dart", src, "test.dart");
+    assert_eq!(syms.len(), 2, "extension type + getter: {:?}", syms);
+    let ext = syms.iter().find(|s| s.name == "Wrapper");
+    assert!(ext.is_some(), "should find extension type: {:?}", syms);
+    assert_eq!(ext.unwrap().kind, SymbolKind::Class);
+    let getter = syms.iter().find(|s| s.name == "doubled");
+    assert!(getter.is_some(), "should find extension type getter: {:?}", syms);
+    assert_eq!(getter.unwrap().kind, SymbolKind::Method);
+}
+
 // --- find_references tests ---
 
 #[test]
