@@ -77,16 +77,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Generate OIDC token
-        id: oidc
-        run: |
-          token=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=crates.io" | jq -r '.value')
-          echo "::add-mask::$token"
-          echo "token=$token" >> "$GITHUB_OUTPUT"
       - run: cargo publish
         env:
-          CARGO_REGISTRY_TOKEN: "oidc:${{ steps.oidc.outputs.token }}"
+          CARGO_REGISTRY_TOKEN: ""
 
   update-homebrew:
     needs: release
