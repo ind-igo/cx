@@ -92,26 +92,74 @@ jobs:
     needs: release
     runs-on: ubuntu-latest
     steps:
-      - name: Get version from tag
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-      - name: Compute tarball SHA256
-        id: sha
+      - name: Get version and compute SHA256s
+        id: info
         run: |
-          sha=$(curl -sLf "https://github.com/ind-igo/cx/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz" | sha256sum | cut -d' ' -f1)
-          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
+          VERSION="${GITHUB_REF_NAME#v}"
+          BASE="https://github.com/ind-igo/cx/releases/download/${GITHUB_REF_NAME}"
+          ARM_SHA=$(curl -sLf "${BASE}/cx-aarch64-apple-darwin.tar.gz" | sha256sum | cut -d' ' -f1)
+          X86_SHA=$(curl -sLf "${BASE}/cx-x86_64-apple-darwin.tar.gz" | sha256sum | cut -d' ' -f1)
+          LINUX_SHA=$(curl -sLf "${BASE}/cx-x86_64-unknown-linux-gnu.tar.gz" | sha256sum | cut -d' ' -f1)
+          LINUX_ARM_SHA=$(curl -sLf "${BASE}/cx-aarch64-unknown-linux-gnu.tar.gz" | sha256sum | cut -d' ' -f1)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "arm_sha=$ARM_SHA" >> "$GITHUB_OUTPUT"
+          echo "x86_sha=$X86_SHA" >> "$GITHUB_OUTPUT"
+          echo "linux_sha=$LINUX_SHA" >> "$GITHUB_OUTPUT"
+          echo "linux_arm_sha=$LINUX_ARM_SHA" >> "$GITHUB_OUTPUT"
       - name: Update Homebrew tap
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          SHA="${{ steps.sha.outputs.sha256 }}"
+          VERSION="${{ steps.info.outputs.version }}"
+          TAG="${GITHUB_REF_NAME}"
+          ARM_SHA="${{ steps.info.outputs.arm_sha }}"
+          X86_SHA="${{ steps.info.outputs.x86_sha }}"
+          LINUX_SHA="${{ steps.info.outputs.linux_sha }}"
+          LINUX_ARM_SHA="${{ steps.info.outputs.linux_arm_sha }}"
+          BASE="https://github.com/ind-igo/cx/releases/download/${TAG}"
+
           git clone https://x-access-token:${TAP_TOKEN}@github.com/ind-igo/homebrew-cx.git
           cd homebrew-cx
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          sed -i "s|url \".*\"|url \"https://github.com/ind-igo/cx/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz\"|" Formula/cx.rb
-          sed -i "s|sha256 \".*\"|sha256 \"${SHA}\"|" Formula/cx.rb
+
+          cat > Formula/cx.rb << FORMULA
+class Cx < Formula
+  desc "Semantic code navigation for AI agents"
+  homepage "https://github.com/ind-igo/cx"
+  version "${VERSION}"
+  license "MIT"
+
+  on_macos do
+    if Hardware::CPU.arm?
+      url "${BASE}/cx-aarch64-apple-darwin.tar.gz"
+      sha256 "${ARM_SHA}"
+    else
+      url "${BASE}/cx-x86_64-apple-darwin.tar.gz"
+      sha256 "${X86_SHA}"
+    end
+  end
+
+  on_linux do
+    if Hardware::CPU.arm?
+      url "${BASE}/cx-aarch64-unknown-linux-gnu.tar.gz"
+      sha256 "${LINUX_ARM_SHA}"
+    else
+      url "${BASE}/cx-x86_64-unknown-linux-gnu.tar.gz"
+      sha256 "${LINUX_SHA}"
+    end
+  end
+
+  def install
+    bin.install "cx"
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/cx --version")
+  end
+end
+FORMULA
+
           git add Formula/cx.rb
           git diff --staged --quiet && exit 0
           git commit -m "cx ${VERSION}"
