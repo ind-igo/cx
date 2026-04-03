@@ -109,10 +109,6 @@ jobs:
             echo "${key}_sha=$sha" >> "$GITHUB_OUTPUT"
           done
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "arm_sha=$ARM_SHA" >> "$GITHUB_OUTPUT"
-          echo "x86_sha=$X86_SHA" >> "$GITHUB_OUTPUT"
-          echo "linux_sha=$LINUX_SHA" >> "$GITHUB_OUTPUT"
-          echo "linux_arm_sha=$LINUX_ARM_SHA" >> "$GITHUB_OUTPUT"
       - name: Update Homebrew tap
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -130,42 +126,41 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          cat > Formula/cx.rb << FORMULA
-class Cx < Formula
-  desc "Semantic code navigation for AI agents"
-  homepage "https://github.com/ind-igo/cx"
-  version "${VERSION}"
-  license "MIT"
-
-  on_macos do
-    if Hardware::CPU.arm?
-      url "${BASE}/cx-aarch64-apple-darwin.tar.gz"
-      sha256 "${ARM_SHA}"
-    else
-      url "${BASE}/cx-x86_64-apple-darwin.tar.gz"
-      sha256 "${X86_SHA}"
-    end
-  end
-
-  on_linux do
-    if Hardware::CPU.arm?
-      url "${BASE}/cx-aarch64-unknown-linux-gnu.tar.gz"
-      sha256 "${LINUX_ARM_SHA}"
-    else
-      url "${BASE}/cx-x86_64-unknown-linux-gnu.tar.gz"
-      sha256 "${LINUX_SHA}"
-    end
-  end
-
-  def install
-    bin.install "cx"
-  end
-
-  test do
-    assert_match version.to_s, shell_output("#{bin}/cx --version")
-  end
-end
-FORMULA
+          printf '%s\n' \
+            'class Cx < Formula' \
+            '  desc "Semantic code navigation for AI agents"' \
+            '  homepage "https://github.com/ind-igo/cx"' \
+            "  version \"${VERSION}\"" \
+            '  license "MIT"' \
+            '' \
+            '  on_macos do' \
+            '    if Hardware::CPU.arm?' \
+            "      url \"${BASE}/cx-aarch64-apple-darwin.tar.gz\"" \
+            "      sha256 \"${ARM_SHA}\"" \
+            '    else' \
+            "      url \"${BASE}/cx-x86_64-apple-darwin.tar.gz\"" \
+            "      sha256 \"${X86_SHA}\"" \
+            '    end' \
+            '  end' \
+            '' \
+            '  on_linux do' \
+            '    if Hardware::CPU.arm?' \
+            "      url \"${BASE}/cx-aarch64-unknown-linux-gnu.tar.gz\"" \
+            "      sha256 \"${LINUX_ARM_SHA}\"" \
+            '    else' \
+            "      url \"${BASE}/cx-x86_64-unknown-linux-gnu.tar.gz\"" \
+            "      sha256 \"${LINUX_SHA}\"" \
+            '    end' \
+            '  end' \
+            '' \
+            '  def install' \
+            '    bin.install "cx"' \
+            '  end' \
+            '' \
+            '  test do' \
+            '    assert_match version.to_s, shell_output("#{bin}/cx --version")' \
+            '  end' \
+            'end' > Formula/cx.rb
 
           git add Formula/cx.rb
           git diff --staged --quiet && exit 0
