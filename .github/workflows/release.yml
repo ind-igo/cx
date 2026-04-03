@@ -97,10 +97,17 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           BASE="https://github.com/ind-igo/cx/releases/download/${GITHUB_REF_NAME}"
-          ARM_SHA=$(curl -sLf "${BASE}/cx-aarch64-apple-darwin.tar.gz" | sha256sum | cut -d' ' -f1)
-          X86_SHA=$(curl -sLf "${BASE}/cx-x86_64-apple-darwin.tar.gz" | sha256sum | cut -d' ' -f1)
-          LINUX_SHA=$(curl -sLf "${BASE}/cx-x86_64-unknown-linux-gnu.tar.gz" | sha256sum | cut -d' ' -f1)
-          LINUX_ARM_SHA=$(curl -sLf "${BASE}/cx-aarch64-unknown-linux-gnu.tar.gz" | sha256sum | cut -d' ' -f1)
+          for pair in \
+            "arm:cx-aarch64-apple-darwin.tar.gz" \
+            "x86:cx-x86_64-apple-darwin.tar.gz" \
+            "linux:cx-x86_64-unknown-linux-gnu.tar.gz" \
+            "linux_arm:cx-aarch64-unknown-linux-gnu.tar.gz"; do
+            key="${pair%%:*}"
+            file="${pair#*:}"
+            curl -sLf -o "/tmp/${file}" "${BASE}/${file}"
+            sha=$(sha256sum "/tmp/${file}" | cut -d' ' -f1)
+            echo "${key}_sha=$sha" >> "$GITHUB_OUTPUT"
+          done
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "arm_sha=$ARM_SHA" >> "$GITHUB_OUTPUT"
           echo "x86_sha=$X86_SHA" >> "$GITHUB_OUTPUT"
