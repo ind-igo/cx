@@ -77,9 +77,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Exchange OIDC token for crates.io token
+        id: auth
+        run: |
+          OIDC_TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=crates.io" | jq -r '.value')
+          CRATES_TOKEN=$(curl -sS -X POST https://crates.io/api/v1/trusted_publishing/tokens \
+            -H "Content-Type: application/json" \
+            -d "{\"jwt\": \"${OIDC_TOKEN}\"}" | jq -r '.token')
+          echo "::add-mask::$CRATES_TOKEN"
+          echo "token=$CRATES_TOKEN" >> "$GITHUB_OUTPUT"
       - run: cargo publish
         env:
-          CARGO_REGISTRY_TOKEN: ""
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
   update-homebrew:
     needs: release
