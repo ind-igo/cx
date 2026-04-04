@@ -25,6 +25,17 @@ struct Cli {
     #[arg(long, global = true)]
     json: bool,
 
+    /// Max number of results to return (overrides per-command default)
+    #[arg(long, global = true)]
+    limit: Option<usize>,
+
+    /// Skip the first N results
+    #[arg(long, global = true, default_value = "0")]
+    offset: usize,
+
+    /// Return all results (bypass default limit)
+    #[arg(long, global = true, conflicts_with = "limit")]
+    all: bool,
 }
 
 #[derive(Subcommand)]
@@ -142,6 +153,17 @@ fn main() {
     let cli = Cli::parse();
     let root = resolve_root(cli.root);
 
+    let resolve_pagination = |default_limit: Option<usize>| -> query::Pagination {
+        let limit = if cli.all {
+            None
+        } else {
+            Some(cli.limit.unwrap_or_else(|| default_limit.unwrap_or(usize::MAX)))
+        };
+        // Treat usize::MAX as "no limit" → normalize to None
+        let limit = limit.filter(|&n| n < usize::MAX);
+        query::Pagination { limit, offset: cli.offset }
+    };
+
     let exit_code = match cli.command {
         Commands::Overview { path, full } => {
             let idx = index::Index::load_or_build(&root);
@@ -149,22 +171,24 @@ fn main() {
                 root.join(&path)
             };
             if abs.is_dir() {
-                query::dir_overview(&idx, &path, full, cli.json)
+                query::dir_overview(&idx, &path, full, cli.json, &resolve_pagination(None))
             } else {
-                query::symbols(&idx, Some(&path), None, None, cli.json)
+                query::symbols(&idx, Some(&path), None, None, cli.json, &resolve_pagination(None))
             }
         }
         Commands::Symbols { file, name, kind } => {
             let idx = index::Index::load_or_build(&root);
-            query::symbols(&idx, file.as_deref(), name.as_deref(), kind, cli.json)
+            query::symbols(&idx, file.as_deref(), name.as_deref(), kind, cli.json, &resolve_pagination(Some(100)))
         }
         Commands::Definition { name, from, kind, max_lines } => {
             let idx = index::Index::load_or_build(&root);
-            query::definition(&idx, &name, from.as_deref(), kind, max_lines, cli.json)
+            // --from narrows to a single file, so skip default limit
+            let default = if from.is_some() { None } else { Some(3) };
+            query::definition(&idx, &name, from.as_deref(), kind, max_lines, cli.json, &resolve_pagination(default))
         }
         Commands::References { name, file, unique } => {
             let idx = index::Index::load_or_build(&root);
-            query::references(&idx, &name, file.as_deref(), unique, cli.json)
+            query::references(&idx, &name, file.as_deref(), unique, cli.json, &resolve_pagination(Some(50)))
         }
         Commands::Lang { action } => {
             match action {

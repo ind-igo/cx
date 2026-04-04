@@ -185,6 +185,18 @@ Use `--file src/index.rs` to scope the search to a single file. Includes both de
 
 References are computed on-the-fly via AST walking (not indexed), so results are always fresh.
 
+### Pagination
+
+Commands have default result limits to keep output bounded: definition shows 3, symbols 100, references 50. When results are truncated, cx prints a hint:
+
+```
+cx: 3/32 definitions for "OnTypeModel" | --from PATH to narrow | --offset 3 for more | --all
+```
+
+Use `--offset N` to page forward, `--all` to bypass the limit, or `--limit N` to override the default. Narrowing with `--from` / `--file` / `--kind` is usually better than paging.
+
+With `--json`, paginated output uses `{total, offset, limit, results: [...]}`. Non-paginated output remains a bare array.
+
 ## How it works
 
 On first invocation, cx builds an index by parsing all source files with tree-sitter. The index stores symbols, signatures, and byte ranges for every file. Subsequent invocations incrementally update only changed files.

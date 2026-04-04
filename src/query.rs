@@ -9,6 +9,79 @@ use crate::language::{self, detect_language};
 use crate::output::{print_toon, print_json};
 use crate::util::glob::glob_match;
 
+// --- Pagination ---
+
+/// Pagination parameters resolved from CLI flags.
+pub struct Pagination {
+    /// Max results to return (None = unlimited).
+    pub limit: Option<usize>,
+    /// Number of results to skip.
+    pub offset: usize,
+}
+
+/// Result of applying pagination to a result set.
+struct Paginated<T> {
+    /// The visible slice after offset + limit.
+    items: Vec<T>,
+    /// Total number of results before pagination.
+    total: usize,
+    /// The offset that was applied.
+    offset: usize,
+    /// The limit that was applied (None = unlimited).
+    limit: Option<usize>,
+}
+
+impl<T> Paginated<T> {
+    /// True when results were cut off (more items exist after this page).
+    fn was_truncated(&self) -> bool {
+        self.offset + self.items.len() < self.total
+    }
+
+    /// True when JSON output should use the paginated envelope
+    /// (either truncated or mid-pagination via offset).
+    fn needs_envelope(&self) -> bool {
+        self.was_truncated() || self.offset > 0
+    }
+}
+
+fn paginate<T>(items: Vec<T>, pg: &Pagination) -> Paginated<T> {
+    let total = items.len();
+    let visible = items.into_iter()
+        .skip(pg.offset)
+        .take(pg.limit.unwrap_or(usize::MAX))
+        .collect();
+    Paginated { items: visible, total, offset: pg.offset, limit: pg.limit }
+}
+
+/// Wraps results with pagination metadata for JSON output.
+#[derive(Serialize)]
+struct PaginatedJson<'a, T: Serialize> {
+    total: usize,
+    offset: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limit: Option<usize>,
+    results: &'a [T],
+}
+
+/// Emit a compact pagination hint on stderr.
+fn emit_pagination_hint(total: usize, offset: usize, shown: usize, subject: &str, narrow_hint: &str) {
+    let next_offset = offset + shown;
+    eprintln!(
+        "cx: {}/{} {} | {} to narrow | --offset {} for more | --all",
+        shown, total, subject, narrow_hint, next_offset
+    );
+}
+
+fn print_paginated_json<T: Serialize>(pg: &Paginated<T>) {
+    let wrapper = PaginatedJson {
+        total: pg.total,
+        offset: pg.offset,
+        limit: pg.limit,
+        results: &pg.items,
+    };
+    print_json(&wrapper);
+}
+
 // --- Serializable output types ---
 
 #[derive(Serialize)]
@@ -46,6 +119,7 @@ pub fn symbols(
     name_glob: Option<&str>,
     kind_filter: Option<SymbolKind>,
     json: bool,
+    pg: &Pagination,
 ) -> i32 {
     let mut rows: Vec<SymbolRow<'_>> = Vec::new();
 
@@ -106,7 +180,22 @@ pub fn symbols(
             signature: r.symbol.signature.clone(),
         })
         .collect();
-    if json { print_json(&out) } else { print_toon(&out) }
+
+    let paged = paginate(out, pg);
+
+    if json {
+        if paged.needs_envelope() {
+            print_paginated_json(&paged);
+        } else {
+            print_json(&paged.items);
+        }
+    } else {
+        print_toon(&paged.items);
+    }
+
+    if paged.was_truncated() {
+        emit_pagination_hint(paged.total, paged.offset, paged.items.len(), "symbols", "--file PATH | --kind KIND");
+    }
 
     0
 }
@@ -119,6 +208,7 @@ pub fn definition(
     kind_filter: Option<SymbolKind>,
     max_lines: usize,
     json: bool,
+    pg: &Pagination,
 ) -> i32 {
     let from_rel = from.map(|f| make_relative(f, &index.root));
 
@@ -151,7 +241,16 @@ pub fn definition(
         return 0;
     }
 
-    let results: Vec<DefinitionResult> = matches
+    // Sort by symbol priority (types first) then by file path
+    matches.sort_by(|a, b| {
+        symbol_priority(a.1.kind).cmp(&symbol_priority(b.1.kind))
+            .then(a.0.cmp(b.0))
+    });
+
+    // Paginate matches BEFORE reading bodies to avoid pointless disk I/O
+    let paged_matches = paginate(matches, pg);
+
+    let results: Vec<DefinitionResult> = paged_matches.items
         .iter()
         .map(|(path, sym)| {
             let (body, start_line) = read_body(&index.root, path, sym.byte_range)
@@ -179,7 +278,17 @@ pub fn definition(
         .collect();
 
     if json {
-        print_json(&results);
+        if paged_matches.needs_envelope() {
+            let wrapper = PaginatedJson {
+                total: paged_matches.total,
+                offset: paged_matches.offset,
+                limit: paged_matches.limit,
+                results: &results,
+            };
+            print_json(&wrapper);
+        } else {
+            print_json(&results);
+        }
     } else {
         for (i, r) in results.iter().enumerate() {
             if i > 0 {
@@ -191,6 +300,11 @@ pub fn definition(
             }
             println!("\n---\n{}", r.body);
         }
+    }
+
+    if paged_matches.was_truncated() {
+        let subject = format!("definitions for \"{}\"", name);
+        emit_pagination_hint(paged_matches.total, paged_matches.offset, results.len(), &subject, "--from PATH");
     }
 
     0
@@ -230,6 +344,7 @@ pub fn references(
     file: Option<&Path>,
     unique: bool,
     json: bool,
+    pg: &Pagination,
 ) -> i32 {
     let rel_path = file.map(|f| make_relative(f, &index.root));
 
@@ -307,6 +422,8 @@ pub fn references(
     rows.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
     rows.dedup_by(|a, b| a.file == b.file && a.line == b.line);
 
+    let narrow_hint = "--file PATH";
+
     if unique {
         // Deduplicate to one row per (file, caller) pair
         let mut seen = std::collections::HashSet::new();
@@ -325,9 +442,27 @@ pub fn references(
             eprintln!("cx: no callers found");
             return 0;
         }
-        if json { print_json(&unique_rows) } else { print_toon(&unique_rows) }
+        let paged = paginate(unique_rows, pg);
+        if json {
+            if paged.needs_envelope() { print_paginated_json(&paged); } else { print_json(&paged.items); }
+        } else {
+            print_toon(&paged.items);
+        }
+        if paged.was_truncated() {
+            let subject = format!("references for \"{}\"", name);
+            emit_pagination_hint(paged.total, paged.offset, paged.items.len(), &subject, narrow_hint);
+        }
     } else {
-        if json { print_json(&rows) } else { print_toon(&rows) }
+        let paged = paginate(rows, pg);
+        if json {
+            if paged.needs_envelope() { print_paginated_json(&paged); } else { print_json(&paged.items); }
+        } else {
+            print_toon(&paged.items);
+        }
+        if paged.was_truncated() {
+            let subject = format!("references for \"{}\"", name);
+            emit_pagination_hint(paged.total, paged.offset, paged.items.len(), &subject, narrow_hint);
+        }
     }
 
     0
@@ -417,6 +552,7 @@ pub fn dir_overview(
     dir: &Path,
     full: bool,
     json: bool,
+    pg: &Pagination,
 ) -> i32 {
     let rel_dir = make_relative(dir, &index.root);
     // Normalize "." to empty path so starts_with matches all entries
@@ -507,7 +643,15 @@ pub fn dir_overview(
                 });
             }
         }
-        if json { print_json(&rows) } else { print_toon(&rows) }
+        let paged = paginate(rows, pg);
+        if json {
+            if paged.needs_envelope() { print_paginated_json(&paged); } else { print_json(&paged.items); }
+        } else {
+            print_toon(&paged.items);
+        }
+        if paged.was_truncated() {
+            emit_pagination_hint(paged.total, paged.offset, paged.items.len(), "entries", "cx overview <subdir>");
+        }
     } else {
         let mut rows: Vec<DirOverviewRow> = Vec::new();
         for (dir_name, (file_count, sym_count)) in &subdirs {
@@ -538,7 +682,15 @@ pub fn dir_overview(
                 symbols: format!("{}{}", names.join(", "), suffix),
             });
         }
-        if json { print_json(&rows) } else { print_toon(&rows) }
+        let paged = paginate(rows, pg);
+        if json {
+            if paged.needs_envelope() { print_paginated_json(&paged); } else { print_json(&paged.items); }
+        } else {
+            print_toon(&paged.items);
+        }
+        if paged.was_truncated() {
+            emit_pagination_hint(paged.total, paged.offset, paged.items.len(), "entries", "cx overview <subdir>");
+        }
     }
 
     0
