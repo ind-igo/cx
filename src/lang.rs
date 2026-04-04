@@ -2,6 +2,9 @@ use std::path::PathBuf;
 use crate::language::{supported_languages, download_names_for};
 
 pub fn cx_cache_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("CX_CACHE_DIR") {
+        return PathBuf::from(dir);
+    }
     dirs::cache_dir()
         .unwrap_or_else(|| PathBuf::from(".cache"))
         .join("cx")

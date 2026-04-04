@@ -223,11 +223,13 @@ Install with: cx lang add rust typescript
 
 **Supported languages:** Run `cx lang list` to see all supported languages and their install status.
 
-**Index location:** `~/.cache/cx/indexes/` (one db per project, keyed by path hash). Run `cx cache path` to see the exact location, `cx cache clean` to delete it.
+**Index location:** `~/.cache/cx/indexes/` (one db per project, keyed by path hash). Run `cx cache path` to see the exact location, `cx cache clean` to delete it. Override with `CX_CACHE_DIR`.
 
 **Project root detection:** walks up from cwd looking for `.git`. Override with `--root /path/to/project`.
 
 **File filtering:** cx respects your `.gitignore`. To exclude additional directories from indexing, drop an empty `.cx-ignore` file inside them.
+
+**Sandboxed environments (Codex, Claude Code, etc.):** cx writes to `~/.cache/cx` by default. If your sandbox restricts writes outside the workspace, either add `~/.cache/cx` to the sandbox's writable paths, or set `CX_CACHE_DIR` to a writable location (e.g. `CX_CACHE_DIR=/tmp/cx-cache`).
 
 ## Output format
 
