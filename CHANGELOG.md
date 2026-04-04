@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-04-04
+
+### Added
+- `CX_CACHE_DIR` env var to override the cache location (#14) — enables cx in sandboxed agents (Codex, Claude Code) that restrict writes outside the workspace
+
 ## [0.6.2] - 2026-04-04
 
 ### Added
