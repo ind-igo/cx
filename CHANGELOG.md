@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-04-04
+
+### Added
+- **Pagination** (#15): Global `--limit`, `--offset`, `--all` flags across all query commands
+  - Default limits: definition (3), symbols (100), references (50)
+  - Compact stderr hint when truncated: `cx: 3/32 definitions for "X" | --from PATH to narrow | --offset 3 for more | --all`
+  - JSON uses `{total, offset, limit, results}` envelope when paginated, bare array otherwise
+  - `--all` and `--limit` are mutually exclusive (enforced by clap)
+- Definition results sorted by symbol priority (types first) before pagination
+
+### Changed
+- Definition paginates before reading bodies from disk (avoids wasted I/O on large match sets)
+- Skill prompt trimmed from ~1000 to ~350 tokens
+
 ## [0.6.1] - 2026-04-02
 
 ### Added
