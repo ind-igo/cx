@@ -9,6 +9,7 @@ $InstallDir = "$env:LOCALAPPDATA\cx\bin"
 $Arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
 switch ($Arch) {
     'X64'   { $Target = "x86_64-pc-windows-msvc" }
+    'Arm64' { $Target = "aarch64-pc-windows-msvc" }
     default { Write-Error "Unsupported architecture: $Arch"; exit 1 }
 }
 
