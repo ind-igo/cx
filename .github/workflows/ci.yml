@@ -16,7 +16,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install grammars
-        run: cargo run -- lang add rust typescript python go c cpp java ruby lua zig bash solidity elixir
+        run: cargo run -- lang add rust typescript python go c cpp java ruby lua zig bash solidity elixir swift dart
       - run: cargo test
 
   clippy:
