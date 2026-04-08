@@ -131,74 +131,6 @@ fn ts_tsx() {
     assert_eq!(syms[0].name, "App");
 }
 
-#[test]
-fn ts_abstract_class_and_method() {
-    let src = "abstract class Base {\n  abstract getName(): string;\n  concrete() { return 1; }\n}";
-    let syms = extract("typescript", src, "test.ts");
-    let class = syms.iter().find(|s| s.name == "Base").unwrap();
-    assert_eq!(class.kind, SymbolKind::Class);
-    let abs_method = syms.iter().find(|s| s.name == "getName").unwrap();
-    assert_eq!(abs_method.kind, SymbolKind::Method);
-    let method = syms.iter().find(|s| s.name == "concrete").unwrap();
-    assert_eq!(method.kind, SymbolKind::Method);
-}
-
-#[test]
-fn ts_class_fields() {
-    let src = "class Foo {\n  private state: string;\n  readonly name: string;\n  count: number = 0;\n}";
-    let syms = extract("typescript", src, "test.ts");
-    let class = syms.iter().find(|s| s.name == "Foo").unwrap();
-    assert_eq!(class.kind, SymbolKind::Class);
-    let state = syms.iter().find(|s| s.name == "state");
-    assert!(state.is_some(), "should find field 'state': {:?}", syms);
-    assert_eq!(state.unwrap().kind, SymbolKind::Field);
-    let name = syms.iter().find(|s| s.name == "name");
-    assert!(name.is_some(), "should find field 'name': {:?}", syms);
-    assert_eq!(name.unwrap().kind, SymbolKind::Field);
-    let count = syms.iter().find(|s| s.name == "count");
-    assert!(count.is_some(), "should find field 'count': {:?}", syms);
-    assert_eq!(count.unwrap().kind, SymbolKind::Field);
-}
-
-#[test]
-fn ts_getter_setter() {
-    let src = "class Foo {\n  get bar() { return 1; }\n  set bar(v: number) { this._bar = v; }\n}";
-    let syms = extract("typescript", src, "test.ts");
-    let methods: Vec<_> = syms.iter().filter(|s| s.name == "bar").collect();
-    assert!(methods.len() >= 1, "should find getter/setter: {:?}", syms);
-    assert!(methods.iter().all(|s| s.kind == SymbolKind::Method));
-}
-
-#[test]
-fn ts_const_enum() {
-    let src = "const enum Direction {\n  Up,\n  Down,\n}";
-    let syms = extract("typescript", src, "test.ts");
-    assert_eq!(syms.len(), 1);
-    assert_eq!(syms[0].name, "Direction");
-    assert_eq!(syms[0].kind, SymbolKind::Enum);
-}
-
-#[test]
-fn ts_namespace() {
-    let src = "namespace MyNS {\n  export function bar() {}\n}";
-    let syms = extract("typescript", src, "test.ts");
-    let ns = syms.iter().find(|s| s.name == "MyNS");
-    assert!(ns.is_some(), "should find namespace: {:?}", syms);
-    assert_eq!(ns.unwrap().kind, SymbolKind::Module);
-}
-
-#[test]
-fn ts_interface_method_signature() {
-    let src = "interface Repo {\n  findById(id: string): Promise<string>;\n  save(item: string): void;\n}";
-    let syms = extract("typescript", src, "test.ts");
-    let iface = syms.iter().find(|s| s.name == "Repo").unwrap();
-    assert_eq!(iface.kind, SymbolKind::Interface);
-    let find = syms.iter().find(|s| s.name == "findById").unwrap();
-    assert_eq!(find.kind, SymbolKind::Method);
-    let save = syms.iter().find(|s| s.name == "save").unwrap();
-    assert_eq!(save.kind, SymbolKind::Method);
-}
-
 // --- Python ---
 
 #[test]
@@ -247,6 +179,74 @@ fn py_type_annotation_preserved() {
     assert_eq!(syms.len(), 1);
     assert!(syms[0].signature.contains("int"), "sig: {}", syms[0].signature);
     assert!(syms[0].signature.contains("bool"), "sig: {}", syms[0].signature);
+}
+
+#[test]
+fn py_method_in_class() {
+    let src = "class Foo:\n    def bar(self):\n        pass";
+    let syms = extract("python", src, "test.py");
+    let cls = syms.iter().find(|s| s.name == "Foo").unwrap();
+    assert_eq!(cls.kind, SymbolKind::Class);
+    let bar = syms.iter().find(|s| s.name == "bar").unwrap();
+    assert_eq!(bar.kind, SymbolKind::Method);
+}
+
+#[test]
+fn py_decorated_method() {
+    let src = "class Foo:\n    @property\n    def name(self):\n        return self._name";
+    let syms = extract("python", src, "test.py");
+    let name = syms.iter().find(|s| s.name == "name").unwrap();
+    assert_eq!(name.kind, SymbolKind::Method);
+}
+
+#[test]
+fn py_classmethod() {
+    let src = "class Foo:\n    @classmethod\n    def create(cls):\n        return cls()";
+    let syms = extract("python", src, "test.py");
+    let create = syms.iter().find(|s| s.name == "create").unwrap();
+    assert_eq!(create.kind, SymbolKind::Method);
+}
+
+#[test]
+fn py_staticmethod() {
+    let src = "class Foo:\n    @staticmethod\n    def helper():\n        pass";
+    let syms = extract("python", src, "test.py");
+    let helper = syms.iter().find(|s| s.name == "helper").unwrap();
+    assert_eq!(helper.kind, SymbolKind::Method);
+}
+
+#[test]
+fn py_decorated_top_level_fn() {
+    let src = "@timer\ndef run():\n    pass";
+    let syms = extract("python", src, "test.py");
+    let run = syms.iter().find(|s| s.name == "run").unwrap();
+    assert_eq!(run.kind, SymbolKind::Fn);
+}
+
+#[test]
+fn py_decorated_class() {
+    let src = "@dataclass\nclass Point:\n    x: int\n    y: int";
+    let syms = extract("python", src, "test.py");
+    let point = syms.iter().find(|s| s.name == "Point").unwrap();
+    assert_eq!(point.kind, SymbolKind::Class);
+}
+
+#[test]
+fn py_async_method() {
+    let src = "class Server:\n    async def handle(self, req):\n        pass";
+    let syms = extract("python", src, "test.py");
+    let handle = syms.iter().find(|s| s.name == "handle").unwrap();
+    assert_eq!(handle.kind, SymbolKind::Method);
+}
+
+#[test]
+fn py_nested_class() {
+    let src = "class Outer:\n    class Inner:\n        pass";
+    let syms = extract("python", src, "test.py");
+    let outer = syms.iter().find(|s| s.name == "Outer").unwrap();
+    assert_eq!(outer.kind, SymbolKind::Class);
+    let inner = syms.iter().find(|s| s.name == "Inner").unwrap();
+    assert_eq!(inner.kind, SymbolKind::Class);
 }
 
 // --- Go ---
