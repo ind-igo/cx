@@ -493,7 +493,7 @@ fn symbol_priority(kind: SymbolKind) -> u8 {
         | SymbolKind::Interface | SymbolKind::Class => 0,
         SymbolKind::Fn | SymbolKind::Const | SymbolKind::Type
         | SymbolKind::Module | SymbolKind::Event => 1,
-        SymbolKind::Method => 2,
+        SymbolKind::Method | SymbolKind::Field => 2,
     }
 }
 

@@ -131,6 +131,74 @@ fn ts_tsx() {
     assert_eq!(syms[0].name, "App");
 }
 
+#[test]
+fn ts_abstract_class_and_method() {
+    let src = "abstract class Base {\n  abstract getName(): string;\n  concrete() { return 1; }\n}";
+    let syms = extract("typescript", src, "test.ts");
+    let class = syms.iter().find(|s| s.name == "Base").unwrap();
+    assert_eq!(class.kind, SymbolKind::Class);
+    let abs_method = syms.iter().find(|s| s.name == "getName").unwrap();
+    assert_eq!(abs_method.kind, SymbolKind::Method);
+    let method = syms.iter().find(|s| s.name == "concrete").unwrap();
+    assert_eq!(method.kind, SymbolKind::Method);
+}
+
+#[test]
+fn ts_class_fields() {
+    let src = "class Foo {\n  private state: string;\n  readonly name: string;\n  count: number = 0;\n}";
+    let syms = extract("typescript", src, "test.ts");
+    let class = syms.iter().find(|s| s.name == "Foo").unwrap();
+    assert_eq!(class.kind, SymbolKind::Class);
+    let state = syms.iter().find(|s| s.name == "state");
+    assert!(state.is_some(), "should find field 'state': {:?}", syms);
+    assert_eq!(state.unwrap().kind, SymbolKind::Field);
+    let name = syms.iter().find(|s| s.name == "name");
+    assert!(name.is_some(), "should find field 'name': {:?}", syms);
+    assert_eq!(name.unwrap().kind, SymbolKind::Field);
+    let count = syms.iter().find(|s| s.name == "count");
+    assert!(count.is_some(), "should find field 'count': {:?}", syms);
+    assert_eq!(count.unwrap().kind, SymbolKind::Field);
+}
+
+#[test]
+fn ts_getter_setter() {
+    let src = "class Foo {\n  get bar() { return 1; }\n  set bar(v: number) { this._bar = v; }\n}";
+    let syms = extract("typescript", src, "test.ts");
+    let methods: Vec<_> = syms.iter().filter(|s| s.name == "bar").collect();
+    assert!(methods.len() >= 1, "should find getter/setter: {:?}", syms);
+    assert!(methods.iter().all(|s| s.kind == SymbolKind::Method));
+}
+
+#[test]
+fn ts_const_enum() {
+    let src = "const enum Direction {\n  Up,\n  Down,\n}";
+    let syms = extract("typescript", src, "test.ts");
+    assert_eq!(syms.len(), 1);
+    assert_eq!(syms[0].name, "Direction");
+    assert_eq!(syms[0].kind, SymbolKind::Enum);
+}
+
+#[test]
+fn ts_namespace() {
+    let src = "namespace MyNS {\n  export function bar() {}\n}";
+    let syms = extract("typescript", src, "test.ts");
+    let ns = syms.iter().find(|s| s.name == "MyNS");
+    assert!(ns.is_some(), "should find namespace: {:?}", syms);
+    assert_eq!(ns.unwrap().kind, SymbolKind::Module);
+}
+
+#[test]
+fn ts_interface_method_signature() {
+    let src = "interface Repo {\n  findById(id: string): Promise<string>;\n  save(item: string): void;\n}";
+    let syms = extract("typescript", src, "test.ts");
+    let iface = syms.iter().find(|s| s.name == "Repo").unwrap();
+    assert_eq!(iface.kind, SymbolKind::Interface);
+    let find = syms.iter().find(|s| s.name == "findById").unwrap();
+    assert_eq!(find.kind, SymbolKind::Method);
+    let save = syms.iter().find(|s| s.name == "save").unwrap();
+    assert_eq!(save.kind, SymbolKind::Method);
+}
+
 // --- Python ---
 
 #[test]
