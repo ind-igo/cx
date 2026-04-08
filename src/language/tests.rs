@@ -249,6 +249,36 @@ fn py_nested_class() {
     assert_eq!(inner.kind, SymbolKind::Class);
 }
 
+#[test]
+fn py_dataclass_fields() {
+    let src = "@dataclass\nclass Point:\n    x: int\n    y: int\n    z: float = 0.0";
+    let syms = extract("python", src, "test.py");
+    let point = syms.iter().find(|s| s.name == "Point").unwrap();
+    assert_eq!(point.kind, SymbolKind::Class);
+    let x = syms.iter().find(|s| s.name == "x").unwrap();
+    assert_eq!(x.kind, SymbolKind::Field);
+    let y = syms.iter().find(|s| s.name == "y").unwrap();
+    assert_eq!(y.kind, SymbolKind::Field);
+    let z = syms.iter().find(|s| s.name == "z").unwrap();
+    assert_eq!(z.kind, SymbolKind::Field);
+}
+
+#[test]
+fn py_typed_class_variable() {
+    let src = "class Config:\n    count: int = 0\n    name: str = 'default'\n    x = 5";
+    let syms = extract("python", src, "test.py");
+    let config = syms.iter().find(|s| s.name == "Config").unwrap();
+    assert_eq!(config.kind, SymbolKind::Class);
+    // Typed annotations should be captured as fields
+    let count = syms.iter().find(|s| s.name == "count").unwrap();
+    assert_eq!(count.kind, SymbolKind::Field);
+    let name = syms.iter().find(|s| s.name == "name").unwrap();
+    assert_eq!(name.kind, SymbolKind::Field);
+    // Plain assignment without type annotation should NOT be captured
+    assert!(syms.iter().find(|s| s.name == "x").is_none(),
+        "plain class body assignment without type annotation should not be captured");
+}
+
 // --- Go ---
 
 #[test]

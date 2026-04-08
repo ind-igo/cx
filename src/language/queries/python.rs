@@ -31,4 +31,12 @@ pub const QUERY: &str = r#"
     (decorated_definition
       definition: (function_definition
         name: (identifier) @name) @definition.method)))
+
+; --- Typed class body annotations (dataclass fields, class variables with type hints) ---
+
+(class_definition
+  body: (block
+    (assignment
+      left: (identifier) @name
+      type: (type)) @definition.field))
 "#;
