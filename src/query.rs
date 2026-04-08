@@ -200,6 +200,61 @@ pub fn symbols(
     0
 }
 
+/// Serializable row for kind_counts output.
+#[derive(Serialize)]
+struct KindCountRow {
+    kind: String,
+    count: usize,
+}
+
+/// List distinct symbol kinds with their counts, optionally scoped to a file.
+pub fn kind_counts(
+    index: &Index,
+    file: Option<&Path>,
+    json: bool,
+) -> i32 {
+    let rel_path = file.map(|f| make_relative(f, &index.root));
+
+    let files_to_search: Vec<(&PathBuf, &FileData)> = match rel_path {
+        Some(ref rel) => {
+            match index.entries.get_key_value(rel) {
+                Some(kv) => vec![kv],
+                None => {
+                    eprintln!("cx: file not in index: {}", display_path(rel));
+                    return 1;
+                }
+            }
+        }
+        None => index.entries.iter().collect(),
+    };
+
+    let mut counts: std::collections::BTreeMap<&'static str, usize> = std::collections::BTreeMap::new();
+    for (_path, data) in files_to_search {
+        for sym in &data.symbols {
+            *counts.entry(sym.kind.as_str()).or_insert(0) += 1;
+        }
+    }
+
+    if counts.is_empty() {
+        eprintln!("cx: no symbols in index");
+        return 0;
+    }
+
+    let mut rows: Vec<KindCountRow> = counts
+        .into_iter()
+        .map(|(kind, count)| KindCountRow { kind: kind.to_string(), count })
+        .collect();
+    rows.sort_by(|a, b| b.count.cmp(&a.count));
+
+    if json {
+        print_json(&rows);
+    } else {
+        print_toon(&rows);
+    }
+
+    0
+}
+
 /// Execute the definition query: find symbol by exact name, return its body.
 pub fn definition(
     index: &Index,

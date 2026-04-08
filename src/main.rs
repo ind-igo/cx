@@ -61,6 +61,9 @@ enum Commands {
         /// Filter by symbol kind
         #[arg(long)]
         kind: Option<index::SymbolKind>,
+        /// List distinct symbol kinds with counts
+        #[arg(long)]
+        kinds: bool,
     },
     /// Get a function/type body without reading the whole file
     #[command(alias = "d")]
@@ -176,9 +179,13 @@ fn main() {
                 query::symbols(&idx, Some(&path), None, None, cli.json, &resolve_pagination(None))
             }
         }
-        Commands::Symbols { file, name, kind } => {
+        Commands::Symbols { file, name, kind, kinds } => {
             let idx = index::Index::load_or_build(&root);
-            query::symbols(&idx, file.as_deref(), name.as_deref(), kind, cli.json, &resolve_pagination(Some(100)))
+            if kinds {
+                query::kind_counts(&idx, file.as_deref(), cli.json)
+            } else {
+                query::symbols(&idx, file.as_deref(), name.as_deref(), kind, cli.json, &resolve_pagination(Some(100)))
+            }
         }
         Commands::Definition { name, from, kind, max_lines } => {
             let idx = index::Index::load_or_build(&root);

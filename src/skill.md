@@ -8,6 +8,7 @@ Prefer cx over reading files. Escalate: overview → symbols → definition/refe
 cx overview PATH                                    file or directory table of contents
 cx overview DIR --full                              directory overview with signatures
 cx symbols [--kind K] [--name GLOB] [--file PATH]   search symbols project-wide
+cx symbols --kinds [--file PATH]                     list distinct kinds with counts
 cx definition --name NAME [--from PATH] [--kind K]  get a function/type body
 cx references --name NAME [--file PATH] [--unique]   find all usages (--unique: one per caller)
 cx lang list                                         show supported languages
