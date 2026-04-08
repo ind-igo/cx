@@ -493,7 +493,7 @@ fn symbol_priority(kind: SymbolKind) -> u8 {
         | SymbolKind::Interface | SymbolKind::Class => 0,
         SymbolKind::Fn | SymbolKind::Const | SymbolKind::Type
         | SymbolKind::Module | SymbolKind::Event => 1,
-        SymbolKind::Method | SymbolKind::Field => 2,
+        SymbolKind::Field => 2,
     }
 }
 
@@ -791,6 +791,6 @@ mod tests {
         assert!(symbol_priority(SymbolKind::Trait) < symbol_priority(SymbolKind::Fn));
         assert!(symbol_priority(SymbolKind::Interface) < symbol_priority(SymbolKind::Fn));
         assert!(symbol_priority(SymbolKind::Class) < symbol_priority(SymbolKind::Fn));
-        assert!(symbol_priority(SymbolKind::Fn) < symbol_priority(SymbolKind::Method));
+        assert!(symbol_priority(SymbolKind::Fn) < symbol_priority(SymbolKind::Field));
     }
 }

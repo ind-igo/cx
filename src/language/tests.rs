@@ -100,7 +100,7 @@ fn ts_class() {
     let class = syms.iter().find(|s| s.name == "UserService").unwrap();
     assert_eq!(class.kind, SymbolKind::Class);
     let method = syms.iter().find(|s| s.name == "getName").unwrap();
-    assert_eq!(method.kind, SymbolKind::Method);
+    assert_eq!(method.kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -188,7 +188,7 @@ fn py_method_in_class() {
     let cls = syms.iter().find(|s| s.name == "Foo").unwrap();
     assert_eq!(cls.kind, SymbolKind::Class);
     let bar = syms.iter().find(|s| s.name == "bar").unwrap();
-    assert_eq!(bar.kind, SymbolKind::Method);
+    assert_eq!(bar.kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -196,7 +196,7 @@ fn py_decorated_method() {
     let src = "class Foo:\n    @property\n    def name(self):\n        return self._name";
     let syms = extract("python", src, "test.py");
     let name = syms.iter().find(|s| s.name == "name").unwrap();
-    assert_eq!(name.kind, SymbolKind::Method);
+    assert_eq!(name.kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -204,7 +204,7 @@ fn py_classmethod() {
     let src = "class Foo:\n    @classmethod\n    def create(cls):\n        return cls()";
     let syms = extract("python", src, "test.py");
     let create = syms.iter().find(|s| s.name == "create").unwrap();
-    assert_eq!(create.kind, SymbolKind::Method);
+    assert_eq!(create.kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -212,7 +212,7 @@ fn py_staticmethod() {
     let src = "class Foo:\n    @staticmethod\n    def helper():\n        pass";
     let syms = extract("python", src, "test.py");
     let helper = syms.iter().find(|s| s.name == "helper").unwrap();
-    assert_eq!(helper.kind, SymbolKind::Method);
+    assert_eq!(helper.kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -236,7 +236,7 @@ fn py_async_method() {
     let src = "class Server:\n    async def handle(self, req):\n        pass";
     let syms = extract("python", src, "test.py");
     let handle = syms.iter().find(|s| s.name == "handle").unwrap();
-    assert_eq!(handle.kind, SymbolKind::Method);
+    assert_eq!(handle.kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -297,7 +297,7 @@ fn go_method() {
     let syms = extract("go", src, "test.go");
     assert_eq!(syms.len(), 1);
     assert_eq!(syms[0].name, "Start");
-    assert_eq!(syms[0].kind, SymbolKind::Method);
+    assert_eq!(syms[0].kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -507,10 +507,10 @@ fn elixir_callback() {
     let syms = extract("elixir", src, "test.ex");
     let validate = syms.iter().find(|s| s.name == "validate");
     assert!(validate.is_some(), "should find @callback validate: {:?}", syms);
-    assert_eq!(validate.unwrap().kind, SymbolKind::Method);
+    assert_eq!(validate.unwrap().kind, SymbolKind::Fn);
     let format = syms.iter().find(|s| s.name == "format");
     assert!(format.is_some(), "should find @callback format: {:?}", syms);
-    assert_eq!(format.unwrap().kind, SymbolKind::Method);
+    assert_eq!(format.unwrap().kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -554,7 +554,7 @@ fn swift_class_and_method() {
     assert_eq!(cls.unwrap().kind, SymbolKind::Class);
     let method = syms.iter().find(|s| s.name == "speak");
     assert!(method.is_some(), "should find method: {:?}", syms);
-    assert_eq!(method.unwrap().kind, SymbolKind::Method);
+    assert_eq!(method.unwrap().kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -590,10 +590,10 @@ fn swift_enum_methods() {
     assert_eq!(e.unwrap().kind, SymbolKind::Enum);
     let method = syms.iter().find(|s| s.name == "opposite");
     assert!(method.is_some(), "should find method in enum: {:?}", syms);
-    assert_eq!(method.unwrap().kind, SymbolKind::Method);
+    assert_eq!(method.unwrap().kind, SymbolKind::Fn);
     let init_sym = syms.iter().find(|s| s.name == "init");
     assert!(init_sym.is_some(), "should find init in enum: {:?}", syms);
-    assert_eq!(init_sym.unwrap().kind, SymbolKind::Method);
+    assert_eq!(init_sym.unwrap().kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -605,7 +605,7 @@ fn swift_protocol() {
     assert_eq!(proto.unwrap().kind, SymbolKind::Interface);
     let draw = syms.iter().find(|s| s.name == "draw");
     assert!(draw.is_some(), "should find protocol method: {:?}", syms);
-    assert_eq!(draw.unwrap().kind, SymbolKind::Method);
+    assert_eq!(draw.unwrap().kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -623,7 +623,7 @@ fn swift_init() {
     let syms = extract("swift", src, "test.swift");
     let init_sym = syms.iter().find(|s| s.name == "init");
     assert!(init_sym.is_some(), "should find init: {:?}", syms);
-    assert_eq!(init_sym.unwrap().kind, SymbolKind::Method);
+    assert_eq!(init_sym.unwrap().kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -632,7 +632,7 @@ fn swift_deinit() {
     let syms = extract("swift", src, "test.swift");
     let deinit_sym = syms.iter().find(|s| s.name == "deinit");
     assert!(deinit_sym.is_some(), "should find deinit: {:?}", syms);
-    assert_eq!(deinit_sym.unwrap().kind, SymbolKind::Method);
+    assert_eq!(deinit_sym.unwrap().kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -644,7 +644,7 @@ fn swift_actor() {
     assert_eq!(actor.unwrap().kind, SymbolKind::Class);
     let method = syms.iter().find(|s| s.name == "deposit");
     assert!(method.is_some(), "should find actor method: {:?}", syms);
-    assert_eq!(method.unwrap().kind, SymbolKind::Method);
+    assert_eq!(method.unwrap().kind, SymbolKind::Fn);
     let prop = syms.iter().find(|s| s.name == "balance");
     assert!(prop.is_some(), "should find actor property: {:?}", syms);
     assert_eq!(prop.unwrap().kind, SymbolKind::Const);
@@ -659,7 +659,7 @@ fn swift_extension() {
     assert_eq!(ext.unwrap().kind, SymbolKind::Module);
     let method = syms.iter().find(|s| s.name == "reversed");
     assert!(method.is_some(), "should find extension method: {:?}", syms);
-    assert_eq!(method.unwrap().kind, SymbolKind::Method);
+    assert_eq!(method.unwrap().kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -670,7 +670,7 @@ fn swift_extension_constrained() {
     assert!(ext.is_some(), "should find constrained extension: {:?}", syms);
     let method = syms.iter().find(|s| s.name == "sorted");
     assert!(method.is_some(), "should find method in constrained extension: {:?}", syms);
-    assert_eq!(method.unwrap().kind, SymbolKind::Method);
+    assert_eq!(method.unwrap().kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -679,7 +679,7 @@ fn swift_subscript() {
     let syms = extract("swift", src, "test.swift");
     let sub = syms.iter().find(|s| s.name == "subscript");
     assert!(sub.is_some(), "should find subscript: {:?}", syms);
-    assert_eq!(sub.unwrap().kind, SymbolKind::Method);
+    assert_eq!(sub.unwrap().kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -694,7 +694,7 @@ fn swift_protocol_property() {
     assert_eq!(prop.unwrap().kind, SymbolKind::Const);
     let method = syms.iter().find(|s| s.name == "greet");
     assert!(method.is_some(), "should find protocol method: {:?}", syms);
-    assert_eq!(method.unwrap().kind, SymbolKind::Method);
+    assert_eq!(method.unwrap().kind, SymbolKind::Fn);
 }
 
 // --- Dart ---
@@ -709,7 +709,7 @@ fn dart_class_and_method() {
     assert_eq!(cls.unwrap().kind, SymbolKind::Class);
     let method = syms.iter().find(|s| s.name == "speak");
     assert!(method.is_some(), "should find method: {:?}", syms);
-    assert_eq!(method.unwrap().kind, SymbolKind::Method);
+    assert_eq!(method.unwrap().kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -722,7 +722,7 @@ fn dart_mixin() {
     assert_eq!(mixin.unwrap().kind, SymbolKind::Class);
     let method = syms.iter().find(|s| s.name == "swim");
     assert!(method.is_some(), "should find mixin method: {:?}", syms);
-    assert_eq!(method.unwrap().kind, SymbolKind::Method);
+    assert_eq!(method.unwrap().kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -770,7 +770,7 @@ fn dart_getter_setter() {
     assert_eq!(syms.len(), 3, "class + getter + setter: {:?}", syms);
     let getters_setters: Vec<_> = syms.iter().filter(|s| s.name == "displayName").collect();
     assert_eq!(getters_setters.len(), 2, "should find getter and setter: {:?}", syms);
-    assert!(getters_setters.iter().all(|s| s.kind == SymbolKind::Method));
+    assert!(getters_setters.iter().all(|s| s.kind == SymbolKind::Fn));
 }
 
 #[test]
@@ -778,7 +778,7 @@ fn dart_constructor() {
     let src = "class Animal {\n  Animal(this.name);\n}";
     let syms = extract("dart", src, "test.dart");
     assert_eq!(syms.len(), 2, "class + constructor: {:?}", syms);
-    let ctor = syms.iter().find(|s| s.name == "Animal" && s.kind == SymbolKind::Method);
+    let ctor = syms.iter().find(|s| s.name == "Animal" && s.kind == SymbolKind::Fn);
     assert!(ctor.is_some(), "should find constructor: {:?}", syms);
 }
 
@@ -786,9 +786,9 @@ fn dart_constructor() {
 fn dart_named_constructor() {
     let src = "class Point {\n  final int x;\n  Point(this.x);\n  Point.origin() : x = 0;\n}";
     let syms = extract("dart", src, "test.dart");
-    let named = syms.iter().find(|s| s.name == "origin" && s.kind == SymbolKind::Method);
+    let named = syms.iter().find(|s| s.name == "origin" && s.kind == SymbolKind::Fn);
     assert!(named.is_some(), "should find named constructor 'origin': {:?}", syms);
-    let unnamed = syms.iter().find(|s| s.name == "Point" && s.kind == SymbolKind::Method);
+    let unnamed = syms.iter().find(|s| s.name == "Point" && s.kind == SymbolKind::Fn);
     assert!(unnamed.is_some(), "should find unnamed constructor: {:?}", syms);
 }
 
@@ -796,7 +796,7 @@ fn dart_named_constructor() {
 fn dart_factory_constructor() {
     let src = "class Animal {\n  factory Animal.create(String name) => Animal(name);\n}";
     let syms = extract("dart", src, "test.dart");
-    let factory = syms.iter().find(|s| s.kind == SymbolKind::Method && s.name == "create");
+    let factory = syms.iter().find(|s| s.kind == SymbolKind::Fn && s.name == "create");
     assert!(factory.is_some(), "should find named factory 'create': {:?}", syms);
 }
 
@@ -807,10 +807,10 @@ fn dart_abstract_method() {
     assert_eq!(syms.len(), 3, "class + 2 abstract methods: {:?}", syms);
     let get_by_id = syms.iter().find(|s| s.name == "getById");
     assert!(get_by_id.is_some(), "should find abstract method: {:?}", syms);
-    assert_eq!(get_by_id.unwrap().kind, SymbolKind::Method);
+    assert_eq!(get_by_id.unwrap().kind, SymbolKind::Fn);
     let save = syms.iter().find(|s| s.name == "save");
     assert!(save.is_some(), "should find abstract method save: {:?}", syms);
-    assert_eq!(save.unwrap().kind, SymbolKind::Method);
+    assert_eq!(save.unwrap().kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -820,7 +820,7 @@ fn dart_static_method() {
     assert_eq!(syms.len(), 2, "class + static method (no duplicates): {:?}", syms);
     let method = syms.iter().find(|s| s.name == "doStuff");
     assert!(method.is_some(), "should find static method: {:?}", syms);
-    assert_eq!(method.unwrap().kind, SymbolKind::Method);
+    assert_eq!(method.unwrap().kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -828,7 +828,7 @@ fn dart_operator_overload() {
     let src = "class Vector {\n  Vector operator +(Vector other) => Vector();\n}";
     let syms = extract("dart", src, "test.dart");
     assert_eq!(syms.len(), 2, "class + operator: {:?}", syms);
-    let op = syms.iter().find(|s| s.name == "operator" && s.kind == SymbolKind::Method);
+    let op = syms.iter().find(|s| s.name == "operator" && s.kind == SymbolKind::Fn);
     assert!(op.is_some(), "should find operator overload: {:?}", syms);
     assert!(op.unwrap().signature.contains("operator +"), "sig should show operator: {}", op.unwrap().signature);
 }
@@ -840,10 +840,10 @@ fn dart_extension_getter() {
     assert_eq!(syms.len(), 3, "extension + getter + method: {:?}", syms);
     let getter = syms.iter().find(|s| s.name == "isBlank");
     assert!(getter.is_some(), "should find extension getter: {:?}", syms);
-    assert_eq!(getter.unwrap().kind, SymbolKind::Method);
+    assert_eq!(getter.unwrap().kind, SymbolKind::Fn);
     let method = syms.iter().find(|s| s.name == "capitalize");
     assert!(method.is_some(), "should find extension method: {:?}", syms);
-    assert_eq!(method.unwrap().kind, SymbolKind::Method);
+    assert_eq!(method.unwrap().kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -856,7 +856,7 @@ fn dart_enum_getter() {
     assert_eq!(e.unwrap().kind, SymbolKind::Enum);
     let getter = syms.iter().find(|s| s.name == "label");
     assert!(getter.is_some(), "should find enum getter: {:?}", syms);
-    assert_eq!(getter.unwrap().kind, SymbolKind::Method);
+    assert_eq!(getter.unwrap().kind, SymbolKind::Fn);
 }
 
 #[test]
@@ -882,7 +882,7 @@ fn dart_extension_type() {
     assert_eq!(ext.unwrap().kind, SymbolKind::Class);
     let getter = syms.iter().find(|s| s.name == "doubled");
     assert!(getter.is_some(), "should find extension type getter: {:?}", syms);
-    assert_eq!(getter.unwrap().kind, SymbolKind::Method);
+    assert_eq!(getter.unwrap().kind, SymbolKind::Fn);
 }
 
 // --- find_references tests ---

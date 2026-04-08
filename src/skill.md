@@ -16,7 +16,7 @@ cx lang add LANG [LANG...]                           install language grammars
 
 Aliases: `cx o`, `cx s`, `cx d`, `cx r`
 
-Kinds: fn, method, struct, enum, trait, type, const, class, interface, module, event
+Kinds: fn, struct, enum, trait, type, const, class, interface, module, event
 
 ## Key patterns
 
