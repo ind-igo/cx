@@ -107,7 +107,14 @@ pub(super) fn extract_symbols(
         };
 
         let name = match name_n.utf8_text(source) {
-            Ok(s) => s.to_string(),
+            Ok(s) => {
+                // Strip surrounding quotes from string-literal names (e.g. Zig test names)
+                if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
+                    s[1..s.len()-1].to_string()
+                } else {
+                    s.to_string()
+                }
+            }
             Err(_) => continue,
         };
 
@@ -158,6 +165,8 @@ fn resolve_kind(config: &LanguageConfig, capture_name: &str, node: &Node) -> Opt
         "definition.enum" => Some(SymbolKind::Enum),
         "definition.module" => Some(SymbolKind::Module),
         "definition.constant" => Some(SymbolKind::Const),
+        "definition.struct" => Some(SymbolKind::Struct),
+        "definition.trait" => Some(SymbolKind::Trait),
         "definition.event" => Some(SymbolKind::Event),
         "definition.field" => Some(SymbolKind::Field),
         "definition.macro" => Some(SymbolKind::Fn),
@@ -226,15 +235,26 @@ fn deduplicate(symbols: Vec<Symbol>) -> Vec<Symbol> {
 
     for sym in symbols {
         if let Some(&idx) = seen.get(&sym.byte_range) {
-            if deduped[idx].kind == sym.kind {
-                // Later pattern wins for same byte range + kind (more specific name capture)
-                deduped[idx] = sym;
-            }
+            // Later pattern wins for same byte range (more specific capture)
+            deduped[idx] = sym;
         } else {
             seen.insert(sym.byte_range, deduped.len());
             deduped.push(sym);
         }
     }
 
-    deduped
+    // Remove symbols whose range is strictly contained within another symbol
+    // of the same name (e.g. class_specifier inside template_declaration).
+    let ranges: Vec<_> = deduped.iter().map(|s| (s.name.as_str(), s.byte_range)).collect();
+    let mut keep = vec![true; deduped.len()];
+    for (i, (name_i, (start_i, end_i))) in ranges.iter().enumerate() {
+        for (j, (name_j, (start_j, end_j))) in ranges.iter().enumerate() {
+            if i != j && name_i == name_j && deduped[i].kind == deduped[j].kind && start_j <= start_i && end_i <= end_j && (start_j, end_j) != (start_i, end_i) {
+                keep[i] = false;
+                break;
+            }
+        }
+    }
+
+    deduped.into_iter().zip(keep).filter(|(_, k)| *k).map(|(s, _)| s).collect()
 }

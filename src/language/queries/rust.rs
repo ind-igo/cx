@@ -1,4 +1,6 @@
 pub const QUERY: &str = r#"
+; --- Type definitions ---
+
 (struct_item
     name: (type_identifier) @name) @definition.class
 
@@ -11,6 +13,8 @@ pub const QUERY: &str = r#"
 (type_item
     name: (type_identifier) @name) @definition.class
 
+; --- Functions & methods ---
+
 (declaration_list
     (function_item
         name: (identifier) @name) @definition.method)
@@ -18,12 +22,26 @@ pub const QUERY: &str = r#"
 (function_item
     name: (identifier) @name) @definition.function
 
+; --- Traits ---
+
 (trait_item
     name: (type_identifier) @name) @definition.interface
+
+; --- Modules ---
 
 (mod_item
     name: (identifier) @name) @definition.module
 
+; --- Macros ---
+
 (macro_definition
     name: (identifier) @name) @definition.macro
+
+; --- Constants & statics ---
+
+(const_item
+    name: (identifier) @name) @definition.constant
+
+(static_item
+    name: (identifier) @name) @definition.constant
 "#;

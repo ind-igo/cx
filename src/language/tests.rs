@@ -304,9 +304,11 @@ fn go_method() {
 fn go_type() {
     let src = "type Config struct {\n\tHost string\n}";
     let syms = extract("go", src, "test.go");
-    assert_eq!(syms.len(), 1);
-    assert_eq!(syms[0].name, "Config");
-    assert_eq!(syms[0].kind, SymbolKind::Type);
+    assert_eq!(syms.len(), 2);
+    let config = syms.iter().find(|s| s.name == "Config").unwrap();
+    assert_eq!(config.kind, SymbolKind::Struct);
+    let host = syms.iter().find(|s| s.name == "Host").unwrap();
+    assert_eq!(host.kind, SymbolKind::Field);
 }
 
 // --- C ---
@@ -399,45 +401,56 @@ fn zig_function() {
 fn zig_struct() {
     let src = "const Point = struct {\n    x: f32,\n    y: f32,\n};";
     let syms = extract("zig", src, "test.zig");
-    assert_eq!(syms.len(), 1, "should find struct: {:?}", syms);
-    assert_eq!(syms[0].name, "Point");
-    assert_eq!(syms[0].kind, SymbolKind::Struct);
+    let point = syms.iter().find(|s| s.name == "Point").unwrap();
+    assert_eq!(point.kind, SymbolKind::Struct);
+    let x = syms.iter().find(|s| s.name == "x").unwrap();
+    assert_eq!(x.kind, SymbolKind::Field);
+    let y = syms.iter().find(|s| s.name == "y").unwrap();
+    assert_eq!(y.kind, SymbolKind::Field);
 }
 
 #[test]
 fn zig_enum() {
     let src = "const Color = enum {\n    red,\n    green,\n    blue,\n};";
     let syms = extract("zig", src, "test.zig");
-    assert_eq!(syms.len(), 1, "should find enum: {:?}", syms);
-    assert_eq!(syms[0].name, "Color");
-    assert_eq!(syms[0].kind, SymbolKind::Enum);
+    let color = syms.iter().find(|s| s.name == "Color").unwrap();
+    assert_eq!(color.kind, SymbolKind::Enum);
 }
 
 #[test]
 fn zig_union() {
     let src = "const Msg = union {\n    int: i32,\n    float: f64,\n};";
     let syms = extract("zig", src, "test.zig");
-    assert_eq!(syms.len(), 1, "should find union: {:?}", syms);
-    assert_eq!(syms[0].name, "Msg");
-    assert_eq!(syms[0].kind, SymbolKind::Struct);
+    let msg = syms.iter().find(|s| s.name == "Msg").unwrap();
+    assert_eq!(msg.kind, SymbolKind::Struct);
+    assert!(syms.iter().any(|s| s.name == "int" && s.kind == SymbolKind::Field));
 }
 
 #[test]
 fn zig_pub_struct() {
     let src = "pub const Point = struct {\n    x: f32,\n    y: f32,\n};";
     let syms = extract("zig", src, "test.zig");
-    assert_eq!(syms.len(), 1, "should find pub struct: {:?}", syms);
-    assert_eq!(syms[0].name, "Point");
-    assert_eq!(syms[0].kind, SymbolKind::Struct);
+    let point = syms.iter().find(|s| s.name == "Point").unwrap();
+    assert_eq!(point.kind, SymbolKind::Struct);
+    assert_eq!(syms.iter().filter(|s| s.kind == SymbolKind::Field).count(), 2);
 }
 
 #[test]
 fn zig_error_set() {
     let src = "const MyError = error {\n    OutOfMemory,\n    InvalidInput,\n};";
     let syms = extract("zig", src, "test.zig");
-    assert_eq!(syms.len(), 1, "should find error set: {:?}", syms);
-    assert_eq!(syms[0].name, "MyError");
-    assert_eq!(syms[0].kind, SymbolKind::Enum);
+    let err = syms.iter().find(|s| s.name == "MyError").unwrap();
+    assert_eq!(err.kind, SymbolKind::Enum);
+}
+
+#[test]
+fn zig_const_and_test() {
+    let src = "const std = @import(\"std\");\npub const max_size: usize = 1024;\ntest \"basic\" {}";
+    let syms = extract("zig", src, "test.zig");
+    let ms = syms.iter().find(|s| s.name == "max_size").unwrap();
+    assert_eq!(ms.kind, SymbolKind::Const);
+    let t = syms.iter().find(|s| s.name.contains("basic")).unwrap();
+    assert_eq!(t.kind, SymbolKind::Fn);
 }
 
 // --- Bash ---
@@ -984,4 +997,150 @@ pub struct MyStruct;
     assert!(test_fn.is_test);
     let my_struct = syms.iter().find(|s| s.name == "MyStruct").unwrap();
     assert!(!my_struct.is_test);
+}
+
+#[test]
+fn go_struct_interface_const_field() {
+    let src = "package main\ntype MyStruct struct {\n    Name string\n}\ntype MyInterface interface {\n    DoSomething() error\n}\ntype Duration int64\nconst MaxRetries = 3\n";
+    let syms = extract("go", src, "test.go");
+    let ms = syms.iter().find(|s| s.name == "MyStruct").unwrap();
+    assert_eq!(ms.kind, SymbolKind::Struct);
+    let mi = syms.iter().find(|s| s.name == "MyInterface").unwrap();
+    assert_eq!(mi.kind, SymbolKind::Interface);
+    let name = syms.iter().find(|s| s.name == "Name").unwrap();
+    assert_eq!(name.kind, SymbolKind::Field);
+    let ds = syms.iter().find(|s| s.name == "DoSomething").unwrap();
+    assert_eq!(ds.kind, SymbolKind::Fn);
+    let dur = syms.iter().find(|s| s.name == "Duration").unwrap();
+    assert_eq!(dur.kind, SymbolKind::Type);
+    let mr = syms.iter().find(|s| s.name == "MaxRetries").unwrap();
+    assert_eq!(mr.kind, SymbolKind::Const);
+}
+
+// --- New pattern tests ---
+
+#[test]
+fn rust_const_and_static() {
+    let src = "pub const MAX_SIZE: usize = 1024;\nstatic GLOBAL: &str = \"hello\";";
+    let syms = extract("rust", src, "test.rs");
+    let c = syms.iter().find(|s| s.name == "MAX_SIZE").unwrap();
+    assert_eq!(c.kind, SymbolKind::Const);
+    let s = syms.iter().find(|s| s.name == "GLOBAL").unwrap();
+    assert_eq!(s.kind, SymbolKind::Const);
+}
+
+#[test]
+fn go_type_alias() {
+    let src = "package main\ntype Byte = uint8\n";
+    let syms = extract("go", src, "test.go");
+    let b = syms.iter().find(|s| s.name == "Byte").unwrap();
+    assert_eq!(b.kind, SymbolKind::Type);
+}
+
+#[test]
+fn java_constructor_and_record() {
+    let src = "public class Foo {\n    public Foo(int x) {}\n}\n";
+    let syms = extract("java", src, "Test.java");
+    let ctor = syms.iter().find(|s| s.name == "Foo" && s.kind == SymbolKind::Fn);
+    assert!(ctor.is_some(), "should find constructor: {:?}", syms);
+}
+
+#[test]
+fn java_field_and_enum_constant() {
+    let src = "public class Config {\n    private int port;\n}\nenum Color { RED, GREEN, BLUE }";
+    let syms = extract("java", src, "Test.java");
+    let field = syms.iter().find(|s| s.name == "port").unwrap();
+    assert_eq!(field.kind, SymbolKind::Field);
+    let red = syms.iter().find(|s| s.name == "RED").unwrap();
+    assert_eq!(red.kind, SymbolKind::Const);
+}
+
+#[test]
+fn cpp_namespace() {
+    let src = "namespace utils {\n    void helper() {}\n}";
+    let syms = extract("cpp", src, "test.cpp");
+    let ns = syms.iter().find(|s| s.name == "utils").unwrap();
+    assert_eq!(ns.kind, SymbolKind::Module);
+    let fn_ = syms.iter().find(|s| s.name == "helper").unwrap();
+    assert_eq!(fn_.kind, SymbolKind::Fn);
+}
+
+#[test]
+fn cpp_template_class() {
+    let src = "template<typename T>\nclass Container {\npublic:\n    T value;\n};";
+    let syms = extract("cpp", src, "test.cpp");
+    let c = syms.iter().find(|s| s.name == "Container").unwrap();
+    assert_eq!(c.kind, SymbolKind::Class);
+}
+
+#[test]
+fn cpp_using_alias() {
+    let src = "using MyInt = int;";
+    let syms = extract("cpp", src, "test.cpp");
+    let t = syms.iter().find(|s| s.name == "MyInt").unwrap();
+    assert_eq!(t.kind, SymbolKind::Type);
+}
+
+#[test]
+fn c_union() {
+    let src = "union Data {\n    int i;\n    float f;\n};";
+    let syms = extract("c", src, "test.c");
+    let u = syms.iter().find(|s| s.name == "Data").unwrap();
+    assert_eq!(u.kind, SymbolKind::Struct);
+}
+
+#[test]
+fn c_function_prototype() {
+    let src = "void foo(int x);\nint bar(void);";
+    let syms = extract("c", src, "test.c");
+    assert_eq!(syms.len(), 2);
+    assert!(syms.iter().all(|s| s.kind == SymbolKind::Fn));
+}
+
+#[test]
+fn solidity_modifier_and_state_var() {
+    let src = "contract Vault {\n    uint256 public balance;\n    modifier onlyOwner() { _; }\n}";
+    let syms = extract("solidity", src, "test.sol");
+    let bal = syms.iter().find(|s| s.name == "balance").unwrap();
+    assert_eq!(bal.kind, SymbolKind::Field);
+    let m = syms.iter().find(|s| s.name == "onlyOwner").unwrap();
+    assert_eq!(m.kind, SymbolKind::Fn);
+}
+
+#[test]
+fn solidity_error_declaration() {
+    let src = "error Unauthorized(address caller);";
+    let syms = extract("solidity", src, "test.sol");
+    let e = syms.iter().find(|s| s.name == "Unauthorized").unwrap();
+    assert_eq!(e.kind, SymbolKind::Type);
+}
+
+#[test]
+fn ruby_constant() {
+    let src = "MAX_SIZE = 100\nclass Foo\nend";
+    let syms = extract("ruby", src, "test.rb");
+    let c = syms.iter().find(|s| s.name == "MAX_SIZE").unwrap();
+    assert_eq!(c.kind, SymbolKind::Const);
+}
+
+#[test]
+fn lua_top_level_local() {
+    let src = "local M = {}\nfunction M.setup()\nend\n";
+    let syms = extract("lua", src, "test.lua");
+    let m = syms.iter().find(|s| s.name == "M").unwrap();
+    assert_eq!(m.kind, SymbolKind::Const);
+    let setup = syms.iter().find(|s| s.name == "setup").unwrap();
+    assert_eq!(setup.kind, SymbolKind::Fn);
+}
+
+#[test]
+fn bash_top_level_var() {
+    let src = "#!/bin/bash\nVERSION=\"1.0\"\nfoo() {\n    local x=1\n}\n";
+    let syms = extract("bash", src, "test.sh");
+    let v = syms.iter().find(|s| s.name == "VERSION").unwrap();
+    assert_eq!(v.kind, SymbolKind::Const);
+    let f = syms.iter().find(|s| s.name == "foo").unwrap();
+    assert_eq!(f.kind, SymbolKind::Fn);
+    // local x should NOT be captured
+    assert!(syms.iter().find(|s| s.name == "x").is_none(), "local vars should not be captured");
 }

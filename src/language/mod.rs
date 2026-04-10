@@ -118,7 +118,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         sig_body_child: None,
         sig_delimiter: Some(b'{'),
         kind_overrides: &[],
-        ref_node_types: &["identifier"],
+        ref_node_types: &["identifier", "type_identifier"],
     },
     LanguageConfig {
         name: "ruby",
