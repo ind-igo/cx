@@ -543,3 +543,97 @@ fn no_pagination_when_under_limit() {
     let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert!(parsed.is_array(), "single result should be bare array: {stdout}");
 }
+
+// --- Directory filtering ---
+
+fn dir_project() -> tempfile::TempDir {
+    temp_project(&[
+        ("src/lib.rs", "pub fn alpha() {}\npub fn beta() {}\n"),
+        ("src/util.rs", "pub fn gamma() {}\n"),
+        ("tests/test_main.rs", "fn test_alpha() {}\n"),
+    ])
+}
+
+#[test]
+fn symbols_file_directory_returns_all_files_in_dir() {
+    let dir = dir_project();
+    let out = cx_in(dir.path()).args(["symbols", "--kind", "fn", "--file", "src"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(stdout.contains("alpha"), "should find alpha in src/: {stdout}");
+    assert!(stdout.contains("gamma"), "should find gamma in src/: {stdout}");
+    assert!(!stdout.contains("test_alpha"), "should not include tests/: {stdout}");
+}
+
+#[test]
+fn symbols_file_directory_shows_file_column() {
+    let dir = dir_project();
+    let out = cx_in(dir.path()).args(["--json", "symbols", "--kind", "fn", "--file", "src"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let arr = parsed.as_array().unwrap();
+    assert!(arr.iter().all(|r| r.get("file").is_some()), "directory query should include file column: {stdout}");
+}
+
+#[test]
+fn symbols_file_single_file_hides_file_column() {
+    let dir = dir_project();
+    let out = cx_in(dir.path()).args(["--json", "symbols", "--kind", "fn", "--file", "src/lib.rs"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let arr = parsed.as_array().unwrap();
+    assert!(arr.iter().all(|r| r.get("file").is_none()), "single-file query should omit file column: {stdout}");
+}
+
+#[test]
+fn references_file_directory() {
+    let dir = dir_project();
+    let out = cx_in(dir.path()).args(["references", "--name", "alpha", "--file", "src"]).output().unwrap();
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+}
+
+#[test]
+fn kind_counts_file_directory() {
+    let dir = dir_project();
+    let out = cx_in(dir.path()).args(["symbols", "--kinds", "--file", "src"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(stdout.contains("fn"), "should list fn kind: {stdout}");
+}
+
+#[test]
+fn definition_from_directory() {
+    let dir = dir_project();
+    let out = cx_in(dir.path()).args(["definition", "--name", "alpha", "--from", "src"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(stdout.contains("alpha"), "should find alpha from src/: {stdout}");
+}
+
+#[test]
+fn symbols_file_nonexistent_directory() {
+    let dir = dir_project();
+    let out = cx_in(dir.path()).args(["symbols", "--file", "nonexistent"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+}
+
+#[test]
+fn symbols_file_empty_directory() {
+    let dir = dir_project();
+    std::fs::create_dir(dir.path().join("empty")).unwrap();
+    let out = cx_in(dir.path()).args(["symbols", "--file", "empty"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("no indexed files under"), "should report empty dir: {stderr}");
+}
+
+#[test]
+fn overview_directory_from_subdirectory() {
+    let dir = dir_project();
+    let out = cx_in(&dir.path().join("src")).args(["overview", "."]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "overview from subdir should work: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(stdout.contains("alpha") || stdout.contains("lib.rs"), "should find files in src/: {stdout}");
+}

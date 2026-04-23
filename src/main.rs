@@ -171,7 +171,7 @@ fn main() {
         Commands::Overview { path, full } => {
             let idx = index::Index::load_or_build(&root);
             let abs = if path.is_absolute() { path.clone() } else {
-                root.join(&path)
+                env::current_dir().unwrap_or_else(|_| root.clone()).join(&path)
             };
             if abs.is_dir() {
                 query::dir_overview(&idx, &path, full, cli.json, &resolve_pagination(None))

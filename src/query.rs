@@ -125,24 +125,14 @@ pub fn symbols(
 
     let rel_path = file.map(|f| make_relative(f, &index.root));
 
-    if let Some(ref rel) = rel_path
-        && !index.entries.contains_key(rel) {
-            let abs = index.root.join(rel);
-            if abs.exists() && detect_language(&abs).is_none() {
-                let ext = abs.extension().and_then(|e| e.to_str()).unwrap_or("(none)");
-                eprintln!("cx: unsupported file type: .{}", ext);
-            } else {
-                eprintln!("cx: file not in index: {}", display_path(rel));
-            }
-            return 1;
-        }
-
     let files_to_search: Vec<(&PathBuf, &FileData)> = match rel_path {
-        Some(ref rel) => {
-            index.entries.get_key_value(rel).into_iter().collect()
-        }
+        Some(ref rel) => match resolve_file_filter(rel, index) {
+            Ok(v) => v,
+            Err(code) => return code,
+        },
         None => index.entries.iter().collect(),
     };
+    let is_single_file = file.is_some() && files_to_search.len() == 1;
 
     for (path, data) in files_to_search {
         for sym in &data.symbols {
@@ -170,7 +160,7 @@ pub fn symbols(
 
     rows.sort_by(|a, b| a.file.cmp(b.file).then(a.symbol.name.cmp(&b.symbol.name)));
 
-    let single_file = file.is_some();
+    let single_file = is_single_file;
     let out: Vec<SymbolRowOut> = rows
         .into_iter()
         .map(|r| SymbolRowOut {
@@ -216,15 +206,10 @@ pub fn kind_counts(
     let rel_path = file.map(|f| make_relative(f, &index.root));
 
     let files_to_search: Vec<(&PathBuf, &FileData)> = match rel_path {
-        Some(ref rel) => {
-            match index.entries.get_key_value(rel) {
-                Some(kv) => vec![kv],
-                None => {
-                    eprintln!("cx: file not in index: {}", display_path(rel));
-                    return 1;
-                }
-            }
-        }
+        Some(ref rel) => match resolve_file_filter(rel, index) {
+            Ok(v) => v,
+            Err(code) => return code,
+        },
         None => index.entries.iter().collect(),
     };
 
@@ -281,9 +266,12 @@ pub fn definition(
     }
 
     if let Some(ref from_path) = from_rel {
+        let is_dir = index.root.join(from_path).is_dir();
         let from_matches: Vec<_> = matches
             .iter()
-            .filter(|(path, _)| *path == from_path)
+            .filter(|(path, _)| {
+                if is_dir { path.starts_with(from_path) } else { *path == from_path }
+            })
             .cloned()
             .collect();
         if !from_matches.is_empty() {
@@ -404,21 +392,10 @@ pub fn references(
     let rel_path = file.map(|f| make_relative(f, &index.root));
 
     let files_to_search: Vec<(&PathBuf, &FileData)> = match rel_path {
-        Some(ref rel) => {
-            match index.entries.get_key_value(rel) {
-                Some(kv) => vec![kv],
-                None => {
-                    let abs = index.root.join(rel);
-                    if abs.exists() && detect_language(&abs).is_none() {
-                        let ext = abs.extension().and_then(|e| e.to_str()).unwrap_or("(none)");
-                        eprintln!("cx: unsupported file type: .{}", ext);
-                    } else {
-                        eprintln!("cx: file not in index: {}", display_path(rel));
-                    }
-                    return 1;
-                }
-            }
-        }
+        Some(ref rel) => match resolve_file_filter(rel, index) {
+            Ok(v) => v,
+            Err(code) => return code,
+        },
         None => index.entries.iter().collect(),
     };
 
@@ -766,6 +743,35 @@ fn read_body(root: &Path, file: &Path, byte_range: (usize, usize)) -> Option<(St
 /// Display a path using forward slashes (consistent across platforms).
 fn display_path(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
+}
+
+fn resolve_file_filter<'a>(
+    rel: &Path,
+    index: &'a Index,
+) -> Result<Vec<(&'a PathBuf, &'a FileData)>, i32> {
+    if let Some(kv) = index.entries.get_key_value(rel) {
+        return Ok(vec![kv]);
+    }
+    let abs = index.root.join(rel);
+    if abs.is_dir() {
+        let matches: Vec<_> = index
+            .entries
+            .iter()
+            .filter(|(path, _)| path.starts_with(rel))
+            .collect();
+        if matches.is_empty() {
+            eprintln!("cx: no indexed files under {}", display_path(rel));
+            return Err(1);
+        }
+        return Ok(matches);
+    }
+    if abs.exists() && detect_language(&abs).is_none() {
+        let ext = abs.extension().and_then(|e| e.to_str()).unwrap_or("(none)");
+        eprintln!("cx: unsupported file type: .{}", ext);
+    } else {
+        eprintln!("cx: file not in index: {}", display_path(rel));
+    }
+    Err(1)
 }
 
 /// Make a path relative to the project root if it's absolute,
