@@ -8,7 +8,7 @@ mod util;
 use clap::{Parser, Subcommand};
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
 
 #[derive(Parser)]
@@ -136,11 +136,19 @@ enum CacheAction {
     Clean,
 }
 
-fn resolve_root(project: Option<PathBuf>) -> PathBuf {
-    if let Some(p) = project { p } else {
-        let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        util::git::find_project_root(&cwd)
+/// Derive the project root.  Priority:
+/// 1. Explicit --root flag
+/// 2. Walk up from an absolute path argument to find .git
+/// 3. Walk up from CWD
+fn resolve_root(explicit: &Option<PathBuf>, path_hint: Option<&Path>) -> PathBuf {
+    if let Some(p) = explicit { return p.clone(); }
+    if let Some(hint) = path_hint {
+        if hint.is_absolute() {
+            return util::git::find_project_root(hint);
+        }
     }
+    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    util::git::find_project_root(&cwd)
 }
 
 fn main() {
@@ -155,7 +163,6 @@ fn main() {
     }
 
     let cli = Cli::parse();
-    let root = resolve_root(cli.root);
 
     let resolve_pagination = |default_limit: Option<usize>| -> query::Pagination {
         let limit = if cli.all {
@@ -163,24 +170,25 @@ fn main() {
         } else {
             Some(cli.limit.unwrap_or_else(|| default_limit.unwrap_or(usize::MAX)))
         };
-        // Treat usize::MAX as "no limit" → normalize to None
         let limit = limit.filter(|&n| n < usize::MAX);
         query::Pagination { limit, offset: cli.offset }
     };
 
     let exit_code = match cli.command {
-        Commands::Overview { path, full } => {
+        Commands::Overview { ref path, full } => {
+            let root = resolve_root(&cli.root, Some(path));
             let idx = index::Index::load_or_build(&root);
             let abs = if path.is_absolute() { path.clone() } else {
-                env::current_dir().unwrap_or_else(|_| root.clone()).join(&path)
+                env::current_dir().unwrap_or_else(|_| root.clone()).join(path)
             };
             if abs.is_dir() {
-                query::dir_overview(&idx, &path, full, cli.no_tests, cli.json, &resolve_pagination(None))
+                query::dir_overview(&idx, path, full, cli.no_tests, cli.json, &resolve_pagination(None))
             } else {
-                query::symbols(&idx, Some(&path), None, None, cli.json, &resolve_pagination(None))
+                query::symbols(&idx, Some(path), None, None, cli.json, &resolve_pagination(None))
             }
         }
-        Commands::Symbols { file, name, kind, kinds } => {
+        Commands::Symbols { ref file, ref name, kind, kinds } => {
+            let root = resolve_root(&cli.root, file.as_deref());
             let idx = index::Index::load_or_build(&root);
             if kinds {
                 query::kind_counts(&idx, file.as_deref(), cli.json)
@@ -188,15 +196,16 @@ fn main() {
                 query::symbols(&idx, file.as_deref(), name.as_deref(), kind, cli.json, &resolve_pagination(Some(100)))
             }
         }
-        Commands::Definition { name, from, kind, max_lines } => {
+        Commands::Definition { ref name, ref from, kind, max_lines } => {
+            let root = resolve_root(&cli.root, from.as_deref());
             let idx = index::Index::load_or_build(&root);
-            // --from narrows to a single file, so skip default limit
             let default = if from.is_some() { None } else { Some(3) };
-            query::definition(&idx, &name, from.as_deref(), kind, max_lines, cli.json, &resolve_pagination(default))
+            query::definition(&idx, name, from.as_deref(), kind, max_lines, cli.json, &resolve_pagination(default))
         }
-        Commands::References { name, file, unique } => {
+        Commands::References { ref name, ref file, unique } => {
+            let root = resolve_root(&cli.root, file.as_deref());
             let idx = index::Index::load_or_build(&root);
-            query::references(&idx, &name, file.as_deref(), unique, cli.json, &resolve_pagination(Some(50)))
+            query::references(&idx, name, file.as_deref(), unique, cli.json, &resolve_pagination(Some(50)))
         }
         Commands::Lang { action } => {
             match action {
@@ -210,6 +219,7 @@ fn main() {
             0
         }
         Commands::Cache { action } => {
+            let root = resolve_root(&cli.root, None);
             let path = index::cache_path_for(&root);
             match action {
                 CacheAction::Path => {

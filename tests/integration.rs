@@ -30,6 +30,20 @@ fn cx_in(dir: &std::path::Path) -> Command {
     cmd
 }
 
+/// Create two isolated temp projects so we can test cross-project root resolution.
+/// Returns (project_a, project_b) temp dirs.
+fn two_projects() -> (tempfile::TempDir, tempfile::TempDir) {
+    let a = temp_project(&[
+        ("src/alpha.rs", "pub fn alpha_fn() {}\npub struct AlphaType;\n"),
+        ("src/shared.rs", "pub fn shared() { 1 }\n"),
+    ]);
+    let b = temp_project(&[
+        ("src/beta.ts", "export function betaFn() {}\nexport class BetaClass {}\n"),
+        ("src/shared.rs", "pub fn shared() { 2 }\n"),
+    ]);
+    (a, b)
+}
+
 #[test]
 fn overview_main_rs() {
     let out = cx().args(["overview", "src/main.rs"]).output().unwrap();
@@ -652,4 +666,120 @@ fn overview_directory_from_subdirectory() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success(), "overview from subdir should work: {}", String::from_utf8_lossy(&out.stderr));
     assert!(stdout.contains("alpha") || stdout.contains("lib.rs"), "should find files in src/: {stdout}");
+}
+
+// --- Cross-project root resolution ---
+
+#[test]
+fn overview_absolute_path_resolves_foreign_project() {
+    let (a, b) = two_projects();
+    // CWD is project A, but we pass an absolute path into project B
+    let b_src = b.path().join("src");
+    let out = cx_in(a.path())
+        .args(["overview", b_src.to_str().unwrap()])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "should succeed: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(stdout.contains("beta.ts"), "should find B's files: {stdout}");
+    assert!(!stdout.contains("alpha.rs"), "should not find A's files: {stdout}");
+}
+
+#[test]
+fn overview_absolute_file_resolves_foreign_project() {
+    let (a, b) = two_projects();
+    let b_file = b.path().join("src/shared.rs");
+    let out = cx_in(a.path())
+        .args(["overview", b_file.to_str().unwrap()])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "should succeed: {}", String::from_utf8_lossy(&out.stderr));
+    // B's shared has body "{ 2 }", A's has "{ 1 }" — check we get B's symbols
+    assert!(stdout.contains("shared"), "should find shared fn: {stdout}");
+}
+
+#[test]
+fn symbols_absolute_file_resolves_foreign_project() {
+    let (a, b) = two_projects();
+    let b_src = b.path().join("src");
+    let out = cx_in(a.path())
+        .args(["symbols", "--file", b_src.to_str().unwrap()])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "should succeed: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(stdout.contains("betaFn") || stdout.contains("BetaClass"),
+        "should find B's symbols: {stdout}");
+}
+
+#[test]
+fn definition_absolute_from_resolves_foreign_project() {
+    let (a, b) = two_projects();
+    let b_file = b.path().join("src/shared.rs");
+    let out = cx_in(a.path())
+        .args(["--json", "definition", "--name", "shared", "--from", b_file.to_str().unwrap()])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "should succeed: {}", String::from_utf8_lossy(&out.stderr));
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let arr = parsed.as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    // B's shared() has "{ 2 }" in the body
+    assert!(arr[0]["body"].as_str().unwrap().contains("2"),
+        "should get B's definition, not A's: {stdout}");
+}
+
+#[test]
+fn references_absolute_file_resolves_foreign_project() {
+    let (a, b) = two_projects();
+    let b_file = b.path().join("src/shared.rs");
+    let out = cx_in(a.path())
+        .args(["references", "--name", "shared", "--file", b_file.to_str().unwrap()])
+        .output()
+        .unwrap();
+    // Just needs to not fail — the important thing is it doesn't error with
+    // "no indexed files" due to wrong root
+    assert!(out.status.success(), "should succeed: {}", String::from_utf8_lossy(&out.stderr));
+}
+
+#[test]
+fn relative_path_still_uses_cwd_project() {
+    let (a, _b) = two_projects();
+    // CWD is project A, relative path — should use A's root as before
+    let out = cx_in(a.path())
+        .args(["overview", "src/"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "relative paths should still work: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(stdout.contains("alpha.rs"), "should find A's files: {stdout}");
+}
+
+#[test]
+fn no_path_arg_uses_cwd_project() {
+    let (a, _b) = two_projects();
+    // symbols with no --file should search CWD project
+    let out = cx_in(a.path())
+        .args(["symbols", "--name", "alpha_fn"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success());
+    assert!(stdout.contains("alpha_fn"), "should find A's symbols: {stdout}");
+}
+
+#[test]
+fn explicit_root_overrides_path_hint() {
+    let (a, b) = two_projects();
+    // Pass --root pointing at A, but absolute path pointing at B.
+    // --root should win — so it should fail to find B's files.
+    let b_src = b.path().join("src");
+    let out = cx_in(a.path())
+        .args(["--root", a.path().to_str().unwrap(), "overview", b_src.to_str().unwrap()])
+        .output()
+        .unwrap();
+    // Should fail because B's path isn't under A's root
+    assert!(!out.status.success(), "--root should override path-based discovery");
 }
