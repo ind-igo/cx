@@ -1,4 +1,4 @@
-pub const QUERY: &str = r#"
+pub const QUERY: &str = r"
 ; --- Type declarations ---
 
 (class_declaration
@@ -36,4 +36,4 @@ pub const QUERY: &str = r#"
 
 (enum_constant
   name: (identifier) @name) @definition.constant
-"#;
+";

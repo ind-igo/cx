@@ -46,7 +46,7 @@ pub fn add(languages: &[String]) -> i32 {
             0
         }
         Err(e) => {
-            eprintln!("cx: download failed: {}", e);
+            eprintln!("cx: download failed: {e}");
             eprintln!("cx: check your network connection and try again");
             1
         }
@@ -62,7 +62,7 @@ pub fn remove(languages: &[String]) -> i32 {
     let libs_dir = match tree_sitter_language_pack::cache_dir() {
         Ok(dir) => dir,
         Err(e) => {
-            eprintln!("cx: failed to find cache directory: {}", e);
+            eprintln!("cx: failed to find cache directory: {e}");
             return 1;
         }
     };
@@ -72,7 +72,7 @@ pub fn remove(languages: &[String]) -> i32 {
         let names = if names.is_empty() { vec![lang.as_str()] } else { names };
         let mut removed_any = false;
         for name in &names {
-            let lib_prefix = format!("libtree_sitter_{}", name);
+            let lib_prefix = format!("libtree_sitter_{name}");
             if let Ok(entries) = std::fs::read_dir(&libs_dir) {
                 for entry in entries.flatten() {
                     let fname = entry.file_name();
@@ -86,9 +86,9 @@ pub fn remove(languages: &[String]) -> i32 {
         }
 
         if removed_any {
-            eprintln!("cx: removed {} grammar", lang);
+            eprintln!("cx: removed {lang} grammar");
         } else {
-            eprintln!("cx: {} grammar not found in cache", lang);
+            eprintln!("cx: {lang} grammar not found in cache");
         }
     }
     0
@@ -102,7 +102,7 @@ pub fn list() -> i32 {
         let names = download_names_for(lang);
         let is_installed = names.iter().all(|n| installed.iter().any(|i| i == n));
         let marker = if is_installed { "[installed]" } else { "[missing]" };
-        println!("{:<15} {}", lang, marker);
+        println!("{lang:<15} {marker}");
     }
     eprintln!("\nNeed another language? Open an issue: https://github.com/ind-igo/cx/issues/new?template=language-request.yml");
     0

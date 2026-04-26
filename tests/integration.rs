@@ -306,18 +306,34 @@ fn overview_directory_root() {
 }
 
 #[test]
-fn overview_directory_filters_test_files() {
+fn overview_directory_includes_tests_by_default() {
     let dir = temp_project(&[
         ("src/app.ts", "export function main() {}\n"),
-        ("src/app.test.ts", "describe('app', () => {})\n"),
+        ("src/app.test.ts", "export function testHelper() {}\n"),
         ("tests/integration.rs", "fn test_it() {}\n"),
     ]);
+    // Root overview should include tests/ subdir
     let out = cx_in(dir.path()).args(["overview", "."]).output().unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
-    // Test files and test directories should be excluded
-    assert!(!stdout.contains("app.test.ts"), "should filter test files: {stdout}");
-    assert!(!stdout.contains("tests/"), "should filter test dirs: {stdout}");
+    assert!(stdout.contains("tests/"), "should include test dirs: {stdout}");
+
+    // Drilling into src/ should include test files
+    let out = cx_in(dir.path()).args(["overview", "src/"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(stdout.contains("app.test.ts"), "should include test files: {stdout}");
+
+    // --no-tests should exclude both
+    let out = cx_in(dir.path()).args(["overview", ".", "--no-tests"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(!stdout.contains("tests/"), "--no-tests should filter test dirs: {stdout}");
+
+    let out = cx_in(dir.path()).args(["overview", "src/", "--no-tests"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(!stdout.contains("app.test.ts"), "--no-tests should filter test files: {stdout}");
 }
 
 #[test]

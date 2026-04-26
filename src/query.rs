@@ -33,13 +33,13 @@ struct Paginated<T> {
 
 impl<T> Paginated<T> {
     /// True when results were cut off (more items exist after this page).
-    fn was_truncated(&self) -> bool {
+    const fn was_truncated(&self) -> bool {
         self.offset + self.items.len() < self.total
     }
 
     /// True when JSON output should use the paginated envelope
     /// (either truncated or mid-pagination via offset).
-    fn needs_envelope(&self) -> bool {
+    const fn needs_envelope(&self) -> bool {
         self.was_truncated() || self.offset > 0
     }
 }
@@ -67,8 +67,7 @@ struct PaginatedJson<'a, T: Serialize> {
 fn emit_pagination_hint(total: usize, offset: usize, shown: usize, subject: &str, narrow_hint: &str) {
     let next_offset = offset + shown;
     eprintln!(
-        "cx: {}/{} {} | {} to narrow | --offset {} for more | --all",
-        shown, total, subject, narrow_hint, next_offset
+        "cx: {shown}/{total} {subject} | {narrow_hint} to narrow | --offset {next_offset} for more | --all"
     );
 }
 
@@ -190,7 +189,7 @@ pub fn symbols(
     0
 }
 
-/// Serializable row for kind_counts output.
+/// Serializable row for `kind_counts` output.
 #[derive(Serialize)]
 struct KindCountRow {
     kind: String,
@@ -229,7 +228,7 @@ pub fn kind_counts(
         .into_iter()
         .map(|(kind, count)| KindCountRow { kind: kind.to_string(), count })
         .collect();
-    rows.sort_by(|a, b| b.count.cmp(&a.count));
+    rows.sort_by_key(|r| std::cmp::Reverse(r.count));
 
     if json {
         print_json(&rows);
@@ -272,7 +271,7 @@ pub fn definition(
             .filter(|(path, _)| {
                 if is_dir { path.starts_with(from_path) } else { *path == from_path }
             })
-            .cloned()
+            .copied()
             .collect();
         if !from_matches.is_empty() {
             matches = from_matches;
@@ -339,14 +338,14 @@ pub fn definition(
             }
             print!("file: {}\nline: {}", r.file, r.line);
             if let Some(total) = r.lines {
-                print!("\ntruncated: {} lines total", total);
+                print!("\ntruncated: {total} lines total");
             }
             println!("\n---\n{}", r.body);
         }
     }
 
     if paged_matches.was_truncated() {
-        let subject = format!("definitions for \"{}\"", name);
+        let subject = format!("definitions for \"{name}\"");
         emit_pagination_hint(paged_matches.total, paged_matches.offset, results.len(), &subject, "--from PATH");
     }
 
@@ -417,7 +416,7 @@ pub fn references(
         let refs = match language::find_references(&data.meta.language, &source, &abs_path, name) {
             Ok(r) => r,
             Err(language::LangError::NotInstalled(lang)) => {
-                eprintln!("cx: {} grammar not installed — run: cx lang add {}", lang, lang);
+                eprintln!("cx: {lang} grammar not installed — run: cx lang add {lang}");
                 return 1;
             }
             Err(_) => continue,
@@ -436,7 +435,7 @@ pub fn references(
                 .map(|l| l.trim().to_string())
                 .unwrap_or_default();
             let caller = find_enclosing_symbol(&data.symbols, r.byte_offset)
-                .map(|s| s.to_string());
+                .map(std::string::ToString::to_string);
             rows.push(ReferenceRow {
                 file: display_path(path),
                 line: r.line,
@@ -481,7 +480,7 @@ pub fn references(
             print_toon(&paged.items);
         }
         if paged.was_truncated() {
-            let subject = format!("references for \"{}\"", name);
+            let subject = format!("references for \"{name}\"");
             emit_pagination_hint(paged.total, paged.offset, paged.items.len(), &subject, narrow_hint);
         }
     } else {
@@ -492,7 +491,7 @@ pub fn references(
             print_toon(&paged.items);
         }
         if paged.was_truncated() {
-            let subject = format!("references for \"{}\"", name);
+            let subject = format!("references for \"{name}\"");
             emit_pagination_hint(paged.total, paged.offset, paged.items.len(), &subject, narrow_hint);
         }
     }
@@ -519,7 +518,7 @@ struct DirOverviewFullRow {
 }
 
 /// Priority for symbol kinds in directory overview: lower = shown first.
-fn symbol_priority(kind: SymbolKind) -> u8 {
+const fn symbol_priority(kind: SymbolKind) -> u8 {
     match kind {
         SymbolKind::Struct | SymbolKind::Enum | SymbolKind::Trait
         | SymbolKind::Interface | SymbolKind::Class => 0,
@@ -583,18 +582,18 @@ pub fn dir_overview(
     index: &Index,
     dir: &Path,
     full: bool,
+    no_tests: bool,
     json: bool,
     pg: &Pagination,
 ) -> i32 {
     let rel_dir = make_relative(dir, &index.root);
-    // Normalize "." to empty path so starts_with matches all entries
     let rel_dir = if rel_dir == Path::new(".") { PathBuf::new() } else { rel_dir };
 
     let all_entries: Vec<(&PathBuf, &FileData)> = index
         .entries
         .iter()
         .filter(|(path, _)| rel_dir.as_os_str().is_empty() || path.starts_with(&rel_dir))
-        .filter(|(path, _)| !is_test_file(path))
+        .filter(|(path, _)| !no_tests || !is_test_file(path))
         .collect();
 
     if all_entries.is_empty() {
@@ -611,16 +610,18 @@ pub fn dir_overview(
             Some(c) => c,
             None => continue,
         };
-        let non_test_count = data.symbols.iter().filter(|s| !s.is_test).count();
+        let sym_count = if no_tests {
+            data.symbols.iter().filter(|s| !s.is_test).count()
+        } else {
+            data.symbols.len()
+        };
         if child.components().count() == 1 && child.extension().is_some() {
-            // Direct child file
             direct_files.push((path, data));
         } else {
-            // Subdirectory — aggregate
             let dir_name = child.to_string_lossy().to_string();
             let entry = subdirs.entry(dir_name).or_insert((0, 0));
             entry.0 += 1;
-            entry.1 += non_test_count;
+            entry.1 += sym_count;
         }
     }
 
@@ -629,15 +630,15 @@ pub fn dir_overview(
     // Shared: format subdir display path
     let format_subdir = |dir_name: &str| -> String {
         if rel_dir.as_os_str().is_empty() {
-            format!("{}/", dir_name)
+            format!("{dir_name}/")
         } else {
             format!("{}/{}/", display_path(&rel_dir), dir_name)
         }
     };
 
-    fn prepare_symbols(data: &FileData) -> Vec<&Symbol> {
+    fn prepare_symbols(data: &FileData, no_tests: bool) -> Vec<&Symbol> {
         let mut syms: Vec<&Symbol> = data.symbols.iter()
-            .filter(|s| !s.is_test)
+            .filter(|s| !no_tests || !s.is_test)
             .collect();
         syms.sort_by(|a, b| symbol_priority(a.kind).cmp(&symbol_priority(b.kind))
             .then(a.name.cmp(&b.name)));
@@ -649,13 +650,13 @@ pub fn dir_overview(
         for (dir_name, (file_count, sym_count)) in &subdirs {
             rows.push(DirOverviewFullRow {
                 file: format_subdir(dir_name),
-                name: format!("({} files, {} symbols)", file_count, sym_count),
+                name: format!("({file_count} files, {sym_count} symbols)"),
                 kind: String::new(),
                 signature: String::new(),
             });
         }
         for (path, data) in &direct_files {
-            let syms = prepare_symbols(data);
+            let syms = prepare_symbols(data, no_tests);
             if syms.is_empty() { continue; }
             let total = syms.len();
             for sym in syms.iter().take(DIR_OVERVIEW_MAX_SYMBOLS) {
@@ -689,11 +690,11 @@ pub fn dir_overview(
         for (dir_name, (file_count, sym_count)) in &subdirs {
             rows.push(DirOverviewRow {
                 file: format_subdir(dir_name),
-                symbols: format!("({} files, {} symbols)", file_count, sym_count),
+                symbols: format!("({file_count} files, {sym_count} symbols)"),
             });
         }
         for (path, data) in &direct_files {
-            let syms = prepare_symbols(data);
+            let syms = prepare_symbols(data, no_tests);
             if syms.is_empty() { continue; }
             let total = syms.len();
             // Deduplicate names (e.g. overloaded type params)
@@ -767,7 +768,7 @@ fn resolve_file_filter<'a>(
     }
     if abs.exists() && detect_language(&abs).is_none() {
         let ext = abs.extension().and_then(|e| e.to_str()).unwrap_or("(none)");
-        eprintln!("cx: unsupported file type: .{}", ext);
+        eprintln!("cx: unsupported file type: .{ext}");
     } else {
         eprintln!("cx: file not in index: {}", display_path(rel));
     }

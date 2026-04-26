@@ -1,4 +1,4 @@
-pub const QUERY: &str = r#"
+pub const QUERY: &str = r"
 ; --- Type declarations ---
 
 (class_declaration
@@ -54,4 +54,4 @@ pub const QUERY: &str = r#"
 
 (public_field_definition
   name: (property_identifier) @name) @definition.field
-"#;
+";

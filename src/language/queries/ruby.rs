@@ -1,4 +1,4 @@
-pub const QUERY: &str = r#"
+pub const QUERY: &str = r"
 ; --- Classes & modules ---
 
 (class
@@ -26,4 +26,4 @@ pub const QUERY: &str = r#"
 (assignment
   left: (scope_resolution
     name: (constant) @name)) @definition.constant
-"#;
+";

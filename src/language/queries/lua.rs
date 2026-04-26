@@ -1,4 +1,4 @@
-pub const QUERY: &str = r#"
+pub const QUERY: &str = r"
 ; --- Functions ---
 
 (function_declaration
@@ -19,4 +19,4 @@ pub const QUERY: &str = r#"
     (assignment_statement
       (variable_list
         name: (identifier) @name))) @definition.constant)
-"#;
+";

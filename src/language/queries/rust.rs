@@ -1,4 +1,4 @@
-pub const QUERY: &str = r#"
+pub const QUERY: &str = r"
 ; --- Type definitions ---
 
 (struct_item
@@ -44,4 +44,4 @@ pub const QUERY: &str = r#"
 
 (static_item
     name: (identifier) @name) @definition.constant
-"#;
+";

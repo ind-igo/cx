@@ -1,4 +1,4 @@
-pub const QUERY: &str = r#"
+pub const QUERY: &str = r"
 ; --- Functions ---
 
 (function_definition
@@ -40,4 +40,4 @@ pub const QUERY: &str = r#"
   declarator: (pointer_declarator
     declarator: (function_declarator
       declarator: (identifier) @name))) @definition.function
-"#;
+";

@@ -13,6 +13,8 @@ cx definition --name NAME [--from PATH] [--kind K]  get a function/type body
 cx references --name NAME [--file PATH] [--unique]   find all usages (--unique: one per caller)
 cx lang list                                         show supported languages
 cx lang add LANG [LANG...]                           install language grammars
+
+Global: --no-tests (exclude test files/symbols), --json, --limit N, --offset N, --all
 ```
 
 Aliases: `cx o`, `cx s`, `cx d`, `cx r`

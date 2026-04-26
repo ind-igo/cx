@@ -36,6 +36,10 @@ struct Cli {
     /// Return all results (bypass default limit)
     #[arg(long, global = true, conflicts_with = "limit")]
     all: bool,
+
+    /// Exclude test files and test symbols from results
+    #[arg(long, global = true)]
+    no_tests: bool,
 }
 
 #[derive(Subcommand)]
@@ -133,12 +137,9 @@ enum CacheAction {
 }
 
 fn resolve_root(project: Option<PathBuf>) -> PathBuf {
-    match project {
-        Some(p) => p,
-        None => {
-            let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-            util::git::find_project_root(&cwd)
-        }
+    if let Some(p) = project { p } else {
+        let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        util::git::find_project_root(&cwd)
     }
 }
 
@@ -150,7 +151,7 @@ fn main() {
         ..Default::default()
     };
     if let Err(e) = tree_sitter_language_pack::configure(&config) {
-        eprintln!("cx: failed to configure grammar cache: {}", e);
+        eprintln!("cx: failed to configure grammar cache: {e}");
     }
 
     let cli = Cli::parse();
@@ -174,7 +175,7 @@ fn main() {
                 env::current_dir().unwrap_or_else(|_| root.clone()).join(&path)
             };
             if abs.is_dir() {
-                query::dir_overview(&idx, &path, full, cli.json, &resolve_pagination(None))
+                query::dir_overview(&idx, &path, full, cli.no_tests, cli.json, &resolve_pagination(None))
             } else {
                 query::symbols(&idx, Some(&path), None, None, cli.json, &resolve_pagination(None))
             }
@@ -218,7 +219,7 @@ fn main() {
                 CacheAction::Clean => {
                     if path.exists() {
                         if let Err(e) = fs::remove_file(&path) {
-                            eprintln!("cx: failed to remove cache: {}", e);
+                            eprintln!("cx: failed to remove cache: {e}");
                             1
                         } else {
                             eprintln!("cx: removed {}", path.display());

@@ -1,4 +1,4 @@
-pub const QUERY: &str = r#"
+pub const QUERY: &str = r"
 ; --- Module-level constants ---
 
 (module (assignment left: (identifier) @name) @definition.constant)
@@ -39,4 +39,4 @@ pub const QUERY: &str = r#"
     (assignment
       left: (identifier) @name
       type: (type)) @definition.field))
-"#;
+";

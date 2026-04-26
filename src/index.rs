@@ -19,7 +19,7 @@ pub fn cache_path_for(root: &Path) -> PathBuf {
     canonical.hash(&mut hasher);
     let hash = hasher.finish();
     let dir = index_cache_dir();
-    dir.join(format!("{:016x}.db", hash))
+    dir.join(format!("{hash:016x}.db"))
 }
 
 fn index_cache_dir() -> PathBuf {
@@ -53,7 +53,7 @@ pub struct FileEntry {
 impl FileEntry {
     fn new(mtime: SystemTime, language: &str) -> Self {
         let dur = mtime.duration_since(UNIX_EPOCH).unwrap_or(Duration::ZERO);
-        FileEntry {
+        Self {
             mtime_secs: dur.as_secs(),
             mtime_nanos: dur.subsec_nanos(),
             language: language.to_string(),
@@ -94,7 +94,7 @@ pub enum SymbolKind {
 }
 
 impl SymbolKind {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Fn => "fn",
             Self::Struct => "struct",
@@ -242,7 +242,7 @@ impl Index {
                 Ok(ro_db) => {
                     if let Some(entries) = load_entries(&ro_db)
                         && !needs_update(root, &entries) {
-                        return Index { root: root.to_path_buf(), db: None, entries };
+                        return Self { root: root.to_path_buf(), db: None, entries };
                     }
                 }
                 Err(redb::DatabaseError::UpgradeRequired(_)) => {
@@ -262,33 +262,30 @@ impl Index {
                 match open_db_exclusive(&db_path) {
                     Ok(db) => db,
                     Err(e) => {
-                        eprintln!("cx: failed to open database: {}", e);
+                        eprintln!("cx: failed to open database: {e}");
                         std::process::exit(1);
                     }
                 }
             }
             Err(e) => {
-                eprintln!("cx: failed to open database: {}", e);
+                eprintln!("cx: failed to open database: {e}");
                 std::process::exit(1);
             }
         };
 
-        match load_entries(&db) {
-            Some(entries) => {
-                let mut idx = Index { root: root.to_path_buf(), db: Some(db), entries };
-                idx.incremental_update();
-                idx
-            }
-            None => {
-                let mut idx = Index {
-                    root: root.to_path_buf(),
-                    db: Some(db),
-                    entries: HashMap::new(),
-                };
-                idx.full_crawl();
-                idx.save_all();
-                idx
-            }
+        if let Some(entries) = load_entries(&db) {
+            let mut idx = Self { root: root.to_path_buf(), db: Some(db), entries };
+            idx.incremental_update();
+            idx
+        } else {
+            let mut idx = Self {
+                root: root.to_path_buf(),
+                db: Some(db),
+                entries: HashMap::new(),
+            };
+            idx.full_crawl();
+            idx.save_all();
+            idx
         }
     }
 
@@ -311,7 +308,7 @@ impl Index {
 
         let total = files.len();
         if total > 0 {
-            eprintln!("cx: indexing {} files...", total);
+            eprintln!("cx: indexing {total} files...");
         }
 
         for (i, (abs_path, rel_path, lang, mtime)) in files.iter().enumerate() {
@@ -347,7 +344,7 @@ impl Index {
                 let mut langs: Vec<_> = missing_langs.iter().collect();
                 langs.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
                 for (lang, count) in &langs {
-                    eprintln!("  {} ({} files)", lang, count);
+                    eprintln!("  {lang} ({count} files)");
                 }
                 let names: Vec<&str> = langs.iter().map(|(n, _)| n.as_str()).collect();
                 eprintln!("\nInstall with: cx lang add {}", names.join(" "));
@@ -355,7 +352,7 @@ impl Index {
                 // Some files indexed, some missing
                 for lang in missing_langs.keys() {
                     let ext = primary_extension(lang);
-                    eprintln!("cx: skipping .{} files — install with: cx lang add {}", ext, lang);
+                    eprintln!("cx: skipping .{ext} files — install with: cx lang add {lang}");
                 }
             }
         }
@@ -406,7 +403,7 @@ impl Index {
 
         let total = stale.len();
         if total > 0 {
-            eprintln!("cx: updating {} files...", total);
+            eprintln!("cx: updating {total} files...");
         }
 
         let mut changed_paths: Vec<PathBuf> = Vec::new();
@@ -436,7 +433,7 @@ impl Index {
 
         for lang in &missing_langs {
             let ext = primary_extension(lang);
-            eprintln!("cx: skipping .{} files — install with: cx lang add {}", ext, lang);
+            eprintln!("cx: skipping .{ext} files — install with: cx lang add {lang}");
         }
 
         if !deleted.is_empty() || !changed_paths.is_empty() {
@@ -444,7 +441,7 @@ impl Index {
             let write_txn = match db.begin_write() {
                 Ok(txn) => txn,
                 Err(e) => {
-                    eprintln!("cx: failed to begin write for incremental update: {}", e);
+                    eprintln!("cx: failed to begin write for incremental update: {e}");
                     return;
                 }
             };
@@ -471,25 +468,25 @@ impl Index {
                                 let _ = files_table.insert(key.as_ref(), entry_bytes.as_slice());
                                 let _ = syms_table.insert(key.as_ref(), sym_bytes.as_slice());
                             }
-                            Err(e) => eprintln!("cx: failed to serialize symbols for {}: {}", key, e),
+                            Err(e) => eprintln!("cx: failed to serialize symbols for {key}: {e}"),
                         }
                     }
                 }
             }
             if let Err(e) = write_txn.commit() {
-                eprintln!("cx: failed to commit incremental update: {}", e);
+                eprintln!("cx: failed to commit incremental update: {e}");
             }
         }
     }
 
-    /// Write the entire index to the database (used after full_crawl).
+    /// Write the entire index to the database (used after `full_crawl`).
     /// Clears all existing data first to avoid stale entries.
     fn save_all(&self) {
         let Some(ref db) = self.db else { return };
         let write_txn = match db.begin_write() {
             Ok(txn) => txn,
             Err(e) => {
-                eprintln!("cx: failed to begin write: {}", e);
+                eprintln!("cx: failed to begin write: {e}");
                 return;
             }
         };
@@ -523,13 +520,13 @@ impl Index {
                 let _ = files_table.insert(key.as_ref(), entry_bytes.as_slice());
                 match bincode::serialize(&data.symbols) {
                     Ok(sym_bytes) => { let _ = syms_table.insert(key.as_ref(), sym_bytes.as_slice()); }
-                    Err(e) => eprintln!("cx: failed to serialize symbols for {}: {}", key, e),
+                    Err(e) => eprintln!("cx: failed to serialize symbols for {key}: {e}"),
                 }
             }
         }
 
         if let Err(e) = write_txn.commit() {
-            eprintln!("cx: failed to commit: {}", e);
+            eprintln!("cx: failed to commit: {e}");
         }
     }
 
@@ -553,7 +550,7 @@ fn walk(root: &Path) -> impl Iterator<Item = ignore::DirEntry> {
             true
         })
         .build()
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .filter(|e| e.file_type().is_some_and(|ft| ft.is_file()))
 }
 
@@ -623,11 +620,11 @@ mod tests {
         let decoded: Vec<Symbol> = bincode::deserialize(&bytes).unwrap();
         assert_eq!(decoded.len(), 3);
         assert_eq!(decoded[0].name, "foo");
-        assert_eq!(decoded[0].is_test, false);
+        assert!(!decoded[0].is_test);
         assert_eq!(decoded[1].kind, SymbolKind::Struct);
         assert_eq!(decoded[0].byte_range, (100, 500));
         assert_eq!(decoded[2].name, "test_bar");
-        assert_eq!(decoded[2].is_test, true);
+        assert!(decoded[2].is_test);
     }
 
     #[test]
@@ -647,7 +644,7 @@ mod tests {
 
         assert!(idx.entries.contains_key(&PathBuf::from("src/main.rs")));
         for path in idx.entries.keys() {
-            assert!(!path.starts_with("target/"), "found target/ file: {:?}", path);
+            assert!(!path.starts_with("target/"), "found target/ file: {path:?}");
         }
     }
 
@@ -658,8 +655,8 @@ mod tests {
         for entry in &entries {
             let path = entry.path();
             let rel = path.strip_prefix(&cwd).unwrap_or(path);
-            assert!(!rel.starts_with(".git/"), "found .git file: {:?}", rel);
-            assert!(!rel.starts_with("target/"), "found target file: {:?}", rel);
+            assert!(!rel.starts_with(".git/"), "found .git file: {rel:?}");
+            assert!(!rel.starts_with("target/"), "found target file: {rel:?}");
         }
     }
 

@@ -78,7 +78,7 @@ In sessions with cx enabled, we measured **58% fewer Read calls** and **40-55% f
 
 ### Overview -- file and directory table of contents
 
-Directories show one level: direct files with symbol names, subdirectories with counts. Test files and test symbols are filtered out automatically.
+Directories show one level: direct files with symbol names, subdirectories with counts. Test files and test symbols are included by default; use `--no-tests` to exclude them.
 
 ```
 $ cx overview .

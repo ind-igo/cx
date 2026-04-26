@@ -1,4 +1,4 @@
-pub const QUERY: &str = r#"
+pub const QUERY: &str = r"
 ; --- Contracts, interfaces, libraries ---
 
 (contract_declaration
@@ -42,4 +42,4 @@ pub const QUERY: &str = r#"
 
 (constant_variable_declaration
   name: (identifier) @name) @definition.constant
-"#;
+";

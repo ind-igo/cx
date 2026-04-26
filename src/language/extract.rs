@@ -218,8 +218,7 @@ fn build_signature(config: &LanguageConfig, node: Node, source: &[u8]) -> String
     let first_line = text
         .iter()
         .position(|&b| b == b'\n')
-        .map(|p| &text[..p])
-        .unwrap_or(text);
+        .map_or(text, |p| &text[..p]);
 
     String::from_utf8_lossy(first_line)
         .trim()

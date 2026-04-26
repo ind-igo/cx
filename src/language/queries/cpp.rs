@@ -1,4 +1,4 @@
-pub const QUERY: &str = r#"
+pub const QUERY: &str = r"
 ; --- Functions (also covers in-class constructors) ---
 
 (function_definition
@@ -85,4 +85,4 @@ pub const QUERY: &str = r#"
 
 (concept_definition
   name: (identifier) @name) @definition.type
-"#;
+";

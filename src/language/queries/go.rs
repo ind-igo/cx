@@ -1,4 +1,4 @@
-pub const QUERY: &str = r#"
+pub const QUERY: &str = r"
 ; --- Functions ---
 
 (function_declaration
@@ -41,4 +41,4 @@ pub const QUERY: &str = r#"
 
 (field_declaration
   name: (field_identifier) @name) @definition.field
-"#;
+";

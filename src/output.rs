@@ -5,16 +5,16 @@ use toon_format::encode_default;
 /// Falls back to debug format on encoding error.
 pub fn print_toon<T: Serialize>(value: &T) {
     match encode_default(value) {
-        Ok(s) => print!("{}", s),
-        Err(e) => eprintln!("cx: toon encoding error: {}", e),
+        Ok(s) => print!("{s}"),
+        Err(e) => eprintln!("cx: toon encoding error: {e}"),
     }
 }
 
 /// Encode any serializable value as pretty-printed JSON and print it.
 pub fn print_json<T: Serialize>(value: &T) {
     match serde_json::to_string_pretty(value) {
-        Ok(s) => println!("{}", s),
-        Err(e) => eprintln!("cx: json encoding error: {}", e),
+        Ok(s) => println!("{s}"),
+        Err(e) => eprintln!("cx: json encoding error: {e}"),
     }
 }
 

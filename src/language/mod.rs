@@ -13,7 +13,7 @@ static QUERY_CACHE: LazyLock<RwLock<HashMap<&'static str, Query>>> =
 
 // --- Language registry ---
 
-pub(crate) struct LanguageConfig {
+pub struct LanguageConfig {
     pub name: &'static str,
     pub extensions: &'static [&'static str],
     /// Map certain file extensions to a different grammar name (e.g. tsx → "tsx").
@@ -25,8 +25,8 @@ pub(crate) struct LanguageConfig {
     pub sig_body_child: Option<&'static str>,
     /// Scan for this byte to split signature from body (e.g. b'{').
     pub sig_delimiter: Option<u8>,
-    /// (capture_name, node_kind, SymbolKind) — checked before defaults.
-    /// Empty node_kind matches any node.
+    /// (`capture_name`, `node_kind`, `SymbolKind`) — checked before defaults.
+    /// Empty `node_kind` matches any node.
     pub kind_overrides: &'static [(&'static str, &'static str, SymbolKind)],
     /// Node kinds that represent identifier references (for find-references).
     pub ref_node_types: &'static [&'static str],
@@ -226,8 +226,8 @@ pub enum LangError {
 impl std::fmt::Display for LangError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LangError::NotInstalled(name) => write!(f, "{} grammar not installed — run: cx lang add {}", name, name),
-            LangError::ParseFailed => write!(f, "parse failed"),
+            Self::NotInstalled(name) => write!(f, "{name} grammar not installed — run: cx lang add {name}"),
+            Self::ParseFailed => write!(f, "parse failed"),
         }
     }
 }
@@ -333,14 +333,14 @@ pub fn parse_and_extract(lang: &str, source: &[u8], path: &Path) -> Result<Vec<S
 
     // Fast path: read lock for cache hits (concurrent reads don't block each other)
     {
-        let cache = QUERY_CACHE.read().unwrap_or_else(|e| e.into_inner());
+        let cache = QUERY_CACHE.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(query) = cache.get(grammar_name) {
             return Ok(extract::extract_symbols(config, query, &tree, source));
         }
     }
 
     // Slow path: write lock for cache miss
-    let mut cache = QUERY_CACHE.write().unwrap_or_else(|e| e.into_inner());
+    let mut cache = QUERY_CACHE.write().unwrap_or_else(std::sync::PoisonError::into_inner);
     let query = cache.entry(grammar_name).or_insert_with(|| {
         Query::new(&tree.language(), config.query).expect("query compilation failed")
     });
