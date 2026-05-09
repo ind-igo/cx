@@ -618,6 +618,34 @@ fn symbols_file_single_file_hides_file_column() {
 }
 
 #[test]
+fn cpp_declaration_only_header_at_nested_path() {
+    let dir = temp_project(&[(
+        "GuideModule/algorithm/Guide2DLineDemoAlgorithm.h",
+        "\u{feff}#pragma once\nclass Guide2DLineDemoAlgorithm {\npublic:\n    QString AlgorithmId() const;\n    bool Validate(const GuideAlgorithmDataView& ctx, QString& errorMsg) const;\n};\n",
+    )]);
+
+    let out = cx_in(dir.path())
+        .args(["overview", "GuideModule/algorithm/Guide2DLineDemoAlgorithm.h"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(stdout.contains("Guide2DLineDemoAlgorithm,class"), "should find class: {stdout}");
+    assert!(stdout.contains("AlgorithmId,fn"), "should find declared method: {stdout}");
+    assert!(stdout.contains("Validate,fn"), "should find declared method: {stdout}");
+
+    let out = cx_in(dir.path())
+        .args(["symbols", "--file", "GuideModule/algorithm/Guide2DLineDemoAlgorithm.h"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(stdout.contains("Guide2DLineDemoAlgorithm,class"), "should find class: {stdout}");
+    assert!(stdout.contains("AlgorithmId,fn"), "should find declared method: {stdout}");
+    assert!(stdout.contains("Validate,fn"), "should find declared method: {stdout}");
+}
+
+#[test]
 fn references_file_directory() {
     let dir = dir_project();
     let out = cx_in(dir.path()).args(["references", "--name", "alpha", "--file", "src"]).output().unwrap();

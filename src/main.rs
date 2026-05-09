@@ -142,10 +142,10 @@ enum CacheAction {
 /// 3. Walk up from CWD
 fn resolve_root(explicit: &Option<PathBuf>, path_hint: Option<&Path>) -> PathBuf {
     if let Some(p) = explicit { return p.clone(); }
-    if let Some(hint) = path_hint {
-        if hint.is_absolute() {
-            return util::git::find_project_root(hint);
-        }
+    if let Some(hint) = path_hint
+        && hint.is_absolute()
+    {
+        return util::git::find_project_root(hint);
     }
     let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     util::git::find_project_root(&cwd)

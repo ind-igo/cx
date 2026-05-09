@@ -342,7 +342,7 @@ impl Index {
 
                 let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
                 if let Some(step) = progress_step
-                    && done % step == 0
+                    && done.is_multiple_of(step)
                 {
                     eprintln!("cx: indexed {done}/{total}...");
                 }

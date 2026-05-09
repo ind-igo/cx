@@ -45,6 +45,30 @@ pub const QUERY: &str = r"
       declarator: (qualified_identifier
         name: (identifier) @name)))) @definition.method
 
+; --- Function declarations / prototypes ---
+
+(declaration
+  declarator: (function_declarator
+    declarator: (identifier) @name)) @definition.function
+
+(declaration
+  declarator: (pointer_declarator
+    declarator: (function_declarator
+      declarator: (identifier) @name))) @definition.function
+
+(declaration
+  declarator: (function_declarator
+    declarator: (field_identifier) @name)) @definition.method
+
+(declaration
+  declarator: (function_declarator
+    declarator: (qualified_identifier
+      name: (identifier) @name))) @definition.method
+
+(field_declaration
+  declarator: (function_declarator
+    declarator: (field_identifier) @name)) @definition.method
+
 ; --- Classes & structs ---
 
 (struct_specifier

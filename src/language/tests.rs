@@ -1082,6 +1082,24 @@ fn cpp_using_alias() {
 }
 
 #[test]
+fn cpp_header_declarations_with_bom() {
+    let src = "\u{feff}#pragma once\nclass Guide2DLineDemoAlgorithm {\npublic:\n    QString AlgorithmId() const;\n    bool Validate(const GuideAlgorithmDataView& ctx, QString& errorMsg) const;\n};";
+    let syms = extract("cpp", src, "Guide2DLineDemoAlgorithm.h");
+    let class = syms.iter().find(|s| s.name == "Guide2DLineDemoAlgorithm").unwrap();
+    assert_eq!(class.kind, SymbolKind::Class);
+    let algorithm_id = syms
+        .iter()
+        .find(|s| s.name == "AlgorithmId")
+        .unwrap_or_else(|| panic!("should find AlgorithmId declaration: {syms:?}"));
+    assert_eq!(algorithm_id.kind, SymbolKind::Fn);
+    let validate = syms
+        .iter()
+        .find(|s| s.name == "Validate")
+        .unwrap_or_else(|| panic!("should find Validate declaration: {syms:?}"));
+    assert_eq!(validate.kind, SymbolKind::Fn);
+}
+
+#[test]
 fn c_union() {
     let src = "union Data {\n    int i;\n    float f;\n};";
     let syms = extract("c", src, "test.c");
