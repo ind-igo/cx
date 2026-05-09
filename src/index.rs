@@ -1,13 +1,15 @@
 use ignore::WalkBuilder;
+use rayon::prelude::*;
 use redb::{Database, ReadOnlyDatabase, ReadableDatabase, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::language::{detect_language, parse_and_extract, primary_extension, LangError};
+use crate::language::{LangError, detect_language, parse_and_extract, primary_extension};
 
 pub const INDEX_VERSION: u32 = 8;
 
@@ -35,6 +37,13 @@ pub struct Index {
     db: Option<Database>,
     /// In-memory mirror for fast query access.
     pub entries: HashMap<PathBuf, FileData>,
+}
+
+enum CrawlResult {
+    Indexed(PathBuf, FileData),
+    MissingLang(String),
+    ReadFailed(PathBuf, std::io::Error),
+    ParseFailed,
 }
 
 #[derive(Debug, Clone)]
@@ -311,28 +320,50 @@ impl Index {
             eprintln!("cx: indexing {total} files...");
         }
 
-        for (i, (abs_path, rel_path, lang, mtime)) in files.iter().enumerate() {
-            if total >= 100 && (i + 1) % (total / 10) == 0 {
-                eprintln!("cx: indexed {}/{}...", i + 1, total);
-            }
-            let symbols = match fs::read(abs_path) {
-                Ok(source) => match parse_and_extract(lang, &source, abs_path) {
-                    Ok(syms) => syms,
-                    Err(LangError::NotInstalled(name)) => {
-                        *missing_langs.entry(name).or_insert(0) += 1;
-                        continue;
-                    }
-                    Err(_) => continue,
-                },
-                Err(e) => {
-                    eprintln!("cx: warning: failed to read {}: {}", abs_path.display(), e);
-                    continue;
+        let completed = AtomicUsize::new(0);
+        let progress_step = if total >= 100 { Some(total / 10) } else { None };
+        let results: Vec<_> = files
+            .par_iter()
+            .map(|(abs_path, rel_path, lang, mtime)| {
+                let result = match fs::read(abs_path) {
+                    Ok(source) => match parse_and_extract(lang, &source, abs_path) {
+                        Ok(symbols) => CrawlResult::Indexed(
+                            rel_path.clone(),
+                            FileData {
+                                meta: FileEntry::new(*mtime, lang),
+                                symbols,
+                            },
+                        ),
+                        Err(LangError::NotInstalled(name)) => CrawlResult::MissingLang(name),
+                        Err(_) => CrawlResult::ParseFailed,
+                    },
+                    Err(e) => CrawlResult::ReadFailed(abs_path.clone(), e),
+                };
+
+                let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
+                if let Some(step) = progress_step
+                    && done % step == 0
+                {
+                    eprintln!("cx: indexed {done}/{total}...");
                 }
-            };
-            self.entries.insert(rel_path.clone(), FileData {
-                meta: FileEntry::new(*mtime, lang),
-                symbols,
-            });
+
+                result
+            })
+            .collect();
+
+        for result in results {
+            match result {
+                CrawlResult::Indexed(rel_path, data) => {
+                    self.entries.insert(rel_path, data);
+                }
+                CrawlResult::MissingLang(name) => {
+                    *missing_langs.entry(name).or_insert(0) += 1;
+                }
+                CrawlResult::ReadFailed(path, e) => {
+                    eprintln!("cx: warning: failed to read {}: {}", path.display(), e);
+                }
+                CrawlResult::ParseFailed => {}
+            }
         }
 
         // UX: warn about missing grammars
@@ -690,6 +721,34 @@ mod tests {
 
         // DB file should exist in cache dir
         assert!(cache_path_for(dir.path()).exists());
+    }
+
+    #[test]
+    fn test_full_crawl_indexes_many_files() {
+        let files: Vec<_> = (0..64)
+            .map(|i| {
+                (
+                    format!("src/module_{i}.rs"),
+                    format!("pub fn function_{i}() -> usize {{ {i} }}\n"),
+                )
+            })
+            .collect();
+        let borrowed_files: Vec<_> = files
+            .iter()
+            .map(|(path, content)| (path.as_str(), content.as_str()))
+            .collect();
+
+        let (_dir, idx) = build_temp_index(&borrowed_files);
+
+        assert_eq!(idx.entries.len(), 64);
+        for i in 0..64 {
+            let path = PathBuf::from(format!("src/module_{i}.rs"));
+            let symbols = &idx.entries.get(&path).unwrap().symbols;
+            assert!(
+                symbols.iter().any(|symbol| symbol.name == format!("function_{i}")),
+                "missing function_{i} in {path:?}"
+            );
+        }
     }
 
     #[test]
