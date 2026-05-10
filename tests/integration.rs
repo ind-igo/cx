@@ -276,7 +276,7 @@ fn references_file_filter() {
         ("src/b.rs", "use crate::Foo;\nfn bar(f: Foo) {}\n"),
     ]);
     let out = cx_in(dir.path())
-        .args(["references", "--name", "Foo", "--file", "src/a.rs"])
+        .args(["references", "--name", "Foo", "--file", "src/a.rs", "--context"])
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -294,7 +294,7 @@ fn references_dedup_same_line() {
         ("src/lib.rs", "fn convert(x: Foo) -> Foo { x }\npub struct Foo;\n"),
     ]);
     let out = cx_in(dir.path())
-        .args(["--json", "references", "--name", "Foo"])
+        .args(["--json", "references", "--name", "Foo", "--context"])
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -303,6 +303,31 @@ fn references_dedup_same_line() {
     // Line 1 has Foo twice (param + return), should be deduped to one entry
     let line1_refs: Vec<_> = arr.iter().filter(|r| r["line"] == 1).collect();
     assert_eq!(line1_refs.len(), 1, "same-line refs should be deduped: {stdout}");
+}
+
+#[test]
+fn references_summary_groups_by_file() {
+    let dir = temp_project(&[
+        ("src/a.rs", "pub struct Foo;\nfn use1(f: Foo) {}\nfn use2(f: Foo) {}\n"),
+        ("src/b.rs", "use crate::Foo;\nfn use3(f: Foo) {}\n"),
+    ]);
+
+    let out = cx_in(dir.path())
+        .args(["--json", "references", "--name", "Foo"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let arr = parsed.as_array().unwrap();
+    let a = arr
+        .iter()
+        .find(|row| row["file"] == "src/a.rs")
+        .expect("summary should include src/a.rs");
+
+    assert_eq!(a["refs"].as_u64().unwrap(), 3, "{stdout}");
+    assert_eq!(a["callers"].as_str().unwrap(), "Foo, use1, use2", "{stdout}");
+    assert_eq!(a["lines"].as_str().unwrap(), "1, 2, 3", "{stdout}");
+    assert!(arr.iter().any(|row| row["file"] == "src/b.rs"), "{stdout}");
 }
 
 // --- Directory overview ---
@@ -568,7 +593,7 @@ fn references_pagination() {
     ]);
 
     let out = cx_in(dir.path())
-        .args(["--json", "--limit", "2", "references", "--name", "Foo"])
+        .args(["--json", "--limit", "2", "references", "--name", "Foo", "--context"])
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);

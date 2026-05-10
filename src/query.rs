@@ -407,12 +407,13 @@ fn find_enclosing_symbol(symbols: &[Symbol], byte_offset: usize) -> Option<&str>
         .map(|s| s.name.as_str())
 }
 
-/// Unique caller row for --unique mode.
+/// File-level reference summary for default references output.
 #[derive(Serialize)]
-struct UniqueCallerRow {
+struct ReferenceSummaryRow {
     file: String,
-    caller: String,
-    line: usize,
+    lines: String,
+    refs: usize,
+    callers: String,
 }
 
 /// Find all usages of a symbol name across project files.
@@ -420,7 +421,7 @@ pub fn references(
     index: &Index,
     name: &str,
     file: Option<&Path>,
-    unique: bool,
+    context: bool,
     json: bool,
     pg: &Pagination,
 ) -> i32 {
@@ -491,25 +492,33 @@ pub fn references(
 
     let narrow_hint = "--file PATH";
 
-    if unique {
-        // Deduplicate to one row per (file, caller) pair
-        let mut seen = std::collections::HashSet::new();
-        let unique_rows: Vec<UniqueCallerRow> = rows
+    if !context {
+        let mut by_file: std::collections::BTreeMap<String, (usize, std::collections::BTreeSet<String>, Vec<usize>)> =
+            std::collections::BTreeMap::new();
+        for row in rows {
+            let entry = by_file
+                .entry(row.file)
+                .or_insert_with(|| (0, std::collections::BTreeSet::new(), Vec::new()));
+            entry.0 += 1;
+            if let Some(caller) = row.caller {
+                entry.1.insert(caller);
+            }
+            entry.2.push(row.line);
+        }
+        let summary_rows: Vec<ReferenceSummaryRow> = by_file
             .into_iter()
-            .filter_map(|r| {
-                let caller = r.caller?;
-                if seen.insert((r.file.clone(), caller.clone())) {
-                    Some(UniqueCallerRow { file: r.file, caller, line: r.line })
-                } else {
-                    None
-                }
+            .map(|(file, (refs, callers, lines))| ReferenceSummaryRow {
+                file,
+                lines: lines
+                    .into_iter()
+                    .map(|line| line.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                refs,
+                callers: callers.into_iter().collect::<Vec<_>>().join(", "),
             })
             .collect();
-        if unique_rows.is_empty() {
-            eprintln!("cx: no callers found");
-            return 0;
-        }
-        let paged = paginate(unique_rows, pg);
+        let paged = paginate(summary_rows, pg);
         if json {
             if paged.needs_envelope() { print_paginated_json(&paged); } else { print_json(&paged.items); }
         } else {

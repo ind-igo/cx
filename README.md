@@ -159,6 +159,18 @@ Use `--from src/foo.rs` to disambiguate when multiple files define the same name
 ```
 $ cx references --name Symbol
 
+[5]{file,lines,refs,callers}:
+  src/index.rs,"23, 69, 175, 628, 635",5,"FileData, Symbol, load_entries"
+  src/language/extract.rs,"1, 83, 130, 231",4,"deduplicate, extract_symbols"
+  src/language/mod.rs,"4, 325",2,parse_and_extract
+  src/query.rs,"38, 125, 480, 676",4,"SymbolRow, definition, dir_overview"
+```
+
+References are grouped by file by default for change planning. Use `--context` when you need the exact source line for each hit:
+
+```
+$ cx references --name Symbol --context
+
 [17]{file,line,caller,context}:
   src/index.rs,23,,FileData,"pub symbols: Vec<Symbol>,"
   src/index.rs,69,Symbol,"pub struct Symbol {"
@@ -167,19 +179,7 @@ $ cx references --name Symbol
   ...
 ```
 
-The `caller` column shows which function or type encloses the reference. Use `--unique` to deduplicate by caller — one row per function that depends on the symbol:
-
-```
-$ cx references --name Symbol --unique
-
-[6]{file,caller,line}:
-  src/index.rs,FileData,23
-  src/index.rs,load_entries,175
-  src/language/extract.rs,extract_symbols,83
-  src/language/mod.rs,parse_and_extract,325
-  src/query.rs,definition,125
-  src/query.rs,dir_overview,480
-```
+The `caller` column shows which function or type encloses the reference.
 
 Use `--file src/index.rs` to scope the search to a single file. Includes both definition and usage sites. Duplicate references on the same line are collapsed.
 

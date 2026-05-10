@@ -94,9 +94,9 @@ enum Commands {
         /// Limit search to a specific file
         #[arg(long)]
         file: Option<PathBuf>,
-        /// Deduplicate by enclosing function (one row per caller)
+        /// Show exact reference lines with source context
         #[arg(long)]
-        unique: bool,
+        context: bool,
     },
     /// Manage language grammars
     Lang {
@@ -202,10 +202,10 @@ fn main() {
             let default = if from.is_some() { None } else { Some(3) };
             query::definition(&idx, name, from.as_deref(), kind, max_lines, cli.json, &resolve_pagination(default))
         }
-        Commands::References { ref name, ref file, unique } => {
+        Commands::References { ref name, ref file, context } => {
             let root = resolve_root(&cli.root, file.as_deref());
             let idx = index::Index::load_or_build(&root);
-            query::references(&idx, name, file.as_deref(), unique, cli.json, &resolve_pagination(Some(50)))
+            query::references(&idx, name, file.as_deref(), context, cli.json, &resolve_pagination(Some(50)))
         }
         Commands::Lang { action } => {
             match action {
