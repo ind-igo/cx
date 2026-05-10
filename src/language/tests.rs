@@ -11,8 +11,7 @@ fn init_grammar_cache() {
             cache_dir: Some(crate::lang::grammar_cache_dir()),
             ..Default::default()
         };
-        tree_sitter_language_pack::configure(&config)
-            .expect("failed to configure grammar cache");
+        tree_sitter_language_pack::configure(&config).expect("failed to configure grammar cache");
     });
 }
 
@@ -119,8 +118,16 @@ fn ts_arrow_function() {
     assert_eq!(syms.len(), 1);
     assert_eq!(syms[0].name, "add");
     assert_eq!(syms[0].kind, SymbolKind::Fn);
-    assert!(syms[0].signature.contains("const add"), "should include const: {}", syms[0].signature);
-    assert!(!syms[0].signature.contains("a + b"), "should not include body: {}", syms[0].signature);
+    assert!(
+        syms[0].signature.contains("const add"),
+        "should include const: {}",
+        syms[0].signature
+    );
+    assert!(
+        !syms[0].signature.contains("a + b"),
+        "should not include body: {}",
+        syms[0].signature
+    );
 }
 
 #[test]
@@ -140,8 +147,16 @@ fn py_function() {
     assert_eq!(syms.len(), 1);
     assert_eq!(syms[0].name, "greet");
     assert_eq!(syms[0].kind, SymbolKind::Fn);
-    assert!(syms[0].signature.contains("-> str"), "should preserve return type: {}", syms[0].signature);
-    assert!(syms[0].signature.contains("name: str"), "should preserve param types: {}", syms[0].signature);
+    assert!(
+        syms[0].signature.contains("-> str"),
+        "should preserve return type: {}",
+        syms[0].signature
+    );
+    assert!(
+        syms[0].signature.contains("name: str"),
+        "should preserve param types: {}",
+        syms[0].signature
+    );
 }
 
 #[test]
@@ -177,8 +192,16 @@ fn py_type_annotation_preserved() {
     let src = "def foo(x: int, y: list[str]) -> bool:\n    return True";
     let syms = extract("python", src, "test.py");
     assert_eq!(syms.len(), 1);
-    assert!(syms[0].signature.contains("int"), "sig: {}", syms[0].signature);
-    assert!(syms[0].signature.contains("bool"), "sig: {}", syms[0].signature);
+    assert!(
+        syms[0].signature.contains("int"),
+        "sig: {}",
+        syms[0].signature
+    );
+    assert!(
+        syms[0].signature.contains("bool"),
+        "sig: {}",
+        syms[0].signature
+    );
 }
 
 #[test]
@@ -275,8 +298,10 @@ fn py_typed_class_variable() {
     let name = syms.iter().find(|s| s.name == "name").unwrap();
     assert_eq!(name.kind, SymbolKind::Field);
     // Plain assignment without type annotation should NOT be captured
-    assert!(!syms.iter().any(|s| s.name == "x"),
-        "plain class body assignment without type annotation should not be captured");
+    assert!(
+        !syms.iter().any(|s| s.name == "x"),
+        "plain class body assignment without type annotation should not be captured"
+    );
 }
 
 // --- Go ---
@@ -288,7 +313,11 @@ fn go_function() {
     assert_eq!(syms.len(), 1);
     assert_eq!(syms[0].name, "Calculate");
     assert_eq!(syms[0].kind, SymbolKind::Fn);
-    assert!(syms[0].signature.contains("func"), "sig: {}", syms[0].signature);
+    assert!(
+        syms[0].signature.contains("func"),
+        "sig: {}",
+        syms[0].signature
+    );
 }
 
 #[test]
@@ -423,7 +452,10 @@ fn zig_union() {
     let syms = extract("zig", src, "test.zig");
     let msg = syms.iter().find(|s| s.name == "Msg").unwrap();
     assert_eq!(msg.kind, SymbolKind::Struct);
-    assert!(syms.iter().any(|s| s.name == "int" && s.kind == SymbolKind::Field));
+    assert!(
+        syms.iter()
+            .any(|s| s.name == "int" && s.kind == SymbolKind::Field)
+    );
 }
 
 #[test]
@@ -432,7 +464,10 @@ fn zig_pub_struct() {
     let syms = extract("zig", src, "test.zig");
     let point = syms.iter().find(|s| s.name == "Point").unwrap();
     assert_eq!(point.kind, SymbolKind::Struct);
-    assert_eq!(syms.iter().filter(|s| s.kind == SymbolKind::Field).count(), 2);
+    assert_eq!(
+        syms.iter().filter(|s| s.kind == SymbolKind::Field).count(),
+        2
+    );
 }
 
 #[test]
@@ -519,7 +554,10 @@ fn elixir_callback() {
     let src = "defmodule MyBehaviour do\n  @callback validate(term()) :: :ok | {:error, term()}\n  @callback format(term()) :: String.t()\nend";
     let syms = extract("elixir", src, "test.ex");
     let validate = syms.iter().find(|s| s.name == "validate");
-    assert!(validate.is_some(), "should find @callback validate: {syms:?}");
+    assert!(
+        validate.is_some(),
+        "should find @callback validate: {syms:?}"
+    );
     assert_eq!(validate.unwrap().kind, SymbolKind::Fn);
     let format = syms.iter().find(|s| s.name == "format");
     assert!(format.is_some(), "should find @callback format: {syms:?}");
@@ -539,7 +577,8 @@ fn elixir_defimpl() {
 
 #[test]
 fn elixir_protocol() {
-    let src = "defprotocol Renderable do\n  @spec render(t()) :: String.t()\n  def render(data)\nend";
+    let src =
+        "defprotocol Renderable do\n  @spec render(t()) :: String.t()\n  def render(data)\nend";
     let syms = extract("elixir", src, "test.ex");
     let proto = syms.iter().find(|s| s.name == "Renderable");
     assert!(proto.is_some(), "should find defprotocol: {syms:?}");
@@ -682,7 +721,10 @@ fn swift_extension_constrained() {
     let ext = syms.iter().find(|s| s.kind == SymbolKind::Module);
     assert!(ext.is_some(), "should find constrained extension: {syms:?}");
     let method = syms.iter().find(|s| s.name == "sorted");
-    assert!(method.is_some(), "should find method in constrained extension: {syms:?}");
+    assert!(
+        method.is_some(),
+        "should find method in constrained extension: {syms:?}"
+    );
     assert_eq!(method.unwrap().kind, SymbolKind::Fn);
 }
 
@@ -740,7 +782,8 @@ fn dart_mixin() {
 
 #[test]
 fn dart_extension() {
-    let src = "extension StringExt on String {\n  String reversed() => split('').reversed.join('');\n}";
+    let src =
+        "extension StringExt on String {\n  String reversed() => split('').reversed.join('');\n}";
     let syms = extract("dart", src, "test.dart");
     assert_eq!(syms.len(), 2, "extension + method: {syms:?}");
     let ext = syms.iter().find(|s| s.name == "StringExt");
@@ -764,7 +807,11 @@ fn dart_top_level_function() {
     assert_eq!(syms.len(), 1);
     assert_eq!(syms[0].name, "greet");
     assert_eq!(syms[0].kind, SymbolKind::Fn);
-    assert!(syms[0].signature.contains("greet"), "sig: {}", syms[0].signature);
+    assert!(
+        syms[0].signature.contains("greet"),
+        "sig: {}",
+        syms[0].signature
+    );
 }
 
 #[test]
@@ -778,11 +825,16 @@ fn dart_typedef() {
 
 #[test]
 fn dart_getter_setter() {
-    let src = "class Foo {\n  String get displayName => \"\";\n  set displayName(String value) {}\n}";
+    let src =
+        "class Foo {\n  String get displayName => \"\";\n  set displayName(String value) {}\n}";
     let syms = extract("dart", src, "test.dart");
     assert_eq!(syms.len(), 3, "class + getter + setter: {syms:?}");
     let getters_setters: Vec<_> = syms.iter().filter(|s| s.name == "displayName").collect();
-    assert_eq!(getters_setters.len(), 2, "should find getter and setter: {syms:?}");
+    assert_eq!(
+        getters_setters.len(),
+        2,
+        "should find getter and setter: {syms:?}"
+    );
     assert!(getters_setters.iter().all(|s| s.kind == SymbolKind::Fn));
 }
 
@@ -791,7 +843,9 @@ fn dart_constructor() {
     let src = "class Animal {\n  Animal(this.name);\n}";
     let syms = extract("dart", src, "test.dart");
     assert_eq!(syms.len(), 2, "class + constructor: {syms:?}");
-    let ctor = syms.iter().find(|s| s.name == "Animal" && s.kind == SymbolKind::Fn);
+    let ctor = syms
+        .iter()
+        .find(|s| s.name == "Animal" && s.kind == SymbolKind::Fn);
     assert!(ctor.is_some(), "should find constructor: {syms:?}");
 }
 
@@ -799,23 +853,39 @@ fn dart_constructor() {
 fn dart_named_constructor() {
     let src = "class Point {\n  final int x;\n  Point(this.x);\n  Point.origin() : x = 0;\n}";
     let syms = extract("dart", src, "test.dart");
-    let named = syms.iter().find(|s| s.name == "origin" && s.kind == SymbolKind::Fn);
-    assert!(named.is_some(), "should find named constructor 'origin': {syms:?}");
-    let unnamed = syms.iter().find(|s| s.name == "Point" && s.kind == SymbolKind::Fn);
-    assert!(unnamed.is_some(), "should find unnamed constructor: {syms:?}");
+    let named = syms
+        .iter()
+        .find(|s| s.name == "origin" && s.kind == SymbolKind::Fn);
+    assert!(
+        named.is_some(),
+        "should find named constructor 'origin': {syms:?}"
+    );
+    let unnamed = syms
+        .iter()
+        .find(|s| s.name == "Point" && s.kind == SymbolKind::Fn);
+    assert!(
+        unnamed.is_some(),
+        "should find unnamed constructor: {syms:?}"
+    );
 }
 
 #[test]
 fn dart_factory_constructor() {
     let src = "class Animal {\n  factory Animal.create(String name) => Animal(name);\n}";
     let syms = extract("dart", src, "test.dart");
-    let factory = syms.iter().find(|s| s.kind == SymbolKind::Fn && s.name == "create");
-    assert!(factory.is_some(), "should find named factory 'create': {syms:?}");
+    let factory = syms
+        .iter()
+        .find(|s| s.kind == SymbolKind::Fn && s.name == "create");
+    assert!(
+        factory.is_some(),
+        "should find named factory 'create': {syms:?}"
+    );
 }
 
 #[test]
 fn dart_abstract_method() {
-    let src = "abstract class Repo {\n  Future<int> getById(int id);\n  Future<void> save(int item);\n}";
+    let src =
+        "abstract class Repo {\n  Future<int> getById(int id);\n  Future<void> save(int item);\n}";
     let syms = extract("dart", src, "test.dart");
     assert_eq!(syms.len(), 3, "class + 2 abstract methods: {syms:?}");
     let get_by_id = syms.iter().find(|s| s.name == "getById");
@@ -830,7 +900,11 @@ fn dart_abstract_method() {
 fn dart_static_method() {
     let src = "class Utils {\n  static void doStuff() {}\n}";
     let syms = extract("dart", src, "test.dart");
-    assert_eq!(syms.len(), 2, "class + static method (no duplicates): {syms:?}");
+    assert_eq!(
+        syms.len(),
+        2,
+        "class + static method (no duplicates): {syms:?}"
+    );
     let method = syms.iter().find(|s| s.name == "doStuff");
     assert!(method.is_some(), "should find static method: {syms:?}");
     assert_eq!(method.unwrap().kind, SymbolKind::Fn);
@@ -841,9 +915,15 @@ fn dart_operator_overload() {
     let src = "class Vector {\n  Vector operator +(Vector other) => Vector();\n}";
     let syms = extract("dart", src, "test.dart");
     assert_eq!(syms.len(), 2, "class + operator: {syms:?}");
-    let op = syms.iter().find(|s| s.name == "operator" && s.kind == SymbolKind::Fn);
+    let op = syms
+        .iter()
+        .find(|s| s.name == "operator" && s.kind == SymbolKind::Fn);
     assert!(op.is_some(), "should find operator overload: {syms:?}");
-    assert!(op.unwrap().signature.contains("operator +"), "sig should show operator: {}", op.unwrap().signature);
+    assert!(
+        op.unwrap().signature.contains("operator +"),
+        "sig should show operator: {}",
+        op.unwrap().signature
+    );
 }
 
 #[test]
@@ -878,9 +958,18 @@ fn dart_sealed_class() {
     let syms = extract("dart", src, "test.dart");
     assert_eq!(syms.len(), 4, "4 class variants: {syms:?}");
     let names: Vec<&str> = syms.iter().map(|s| s.name.as_str()).collect();
-    assert!(names.contains(&"Shape"), "should find sealed class: {syms:?}");
-    assert!(names.contains(&"Circle"), "should find base class: {syms:?}");
-    assert!(names.contains(&"Printable"), "should find interface class: {syms:?}");
+    assert!(
+        names.contains(&"Shape"),
+        "should find sealed class: {syms:?}"
+    );
+    assert!(
+        names.contains(&"Circle"),
+        "should find base class: {syms:?}"
+    );
+    assert!(
+        names.contains(&"Printable"),
+        "should find interface class: {syms:?}"
+    );
     assert!(names.contains(&"Both"), "should find mixin class: {syms:?}");
     assert!(syms.iter().all(|s| s.kind == SymbolKind::Class));
 }
@@ -894,7 +983,10 @@ fn dart_extension_type() {
     assert!(ext.is_some(), "should find extension type: {syms:?}");
     assert_eq!(ext.unwrap().kind, SymbolKind::Class);
     let getter = syms.iter().find(|s| s.name == "doubled");
-    assert!(getter.is_some(), "should find extension type getter: {syms:?}");
+    assert!(
+        getter.is_some(),
+        "should find extension type getter: {syms:?}"
+    );
     assert_eq!(getter.unwrap().kind, SymbolKind::Fn);
 }
 
@@ -905,14 +997,25 @@ fn refs_rust_finds_all_usages() {
     init_grammar_cache();
     let src = "struct Foo { x: i32 }\nfn bar(f: Foo) -> Foo { f }";
     let refs = find_references("rust", src.as_bytes(), &PathBuf::from("test.rs"), "Foo").unwrap();
-    assert_eq!(refs.len(), 3, "should find struct def + 2 usages: {:?}", refs.iter().map(|r| r.line).collect::<Vec<_>>());
+    assert_eq!(
+        refs.len(),
+        3,
+        "should find struct def + 2 usages: {:?}",
+        refs.iter().map(|r| r.line).collect::<Vec<_>>()
+    );
 }
 
 #[test]
 fn refs_rust_no_match() {
     init_grammar_cache();
     let src = "fn main() {}";
-    let refs = find_references("rust", src.as_bytes(), &PathBuf::from("test.rs"), "nonexistent").unwrap();
+    let refs = find_references(
+        "rust",
+        src.as_bytes(),
+        &PathBuf::from("test.rs"),
+        "nonexistent",
+    )
+    .unwrap();
     assert!(refs.is_empty());
 }
 
@@ -931,7 +1034,13 @@ fn refs_line_column_correct() {
 fn refs_typescript_identifier() {
     init_grammar_cache();
     let src = "const foo = 1;\nconsole.log(foo);";
-    let refs = find_references("typescript", src.as_bytes(), &PathBuf::from("test.ts"), "foo").unwrap();
+    let refs = find_references(
+        "typescript",
+        src.as_bytes(),
+        &PathBuf::from("test.ts"),
+        "foo",
+    )
+    .unwrap();
     assert_eq!(refs.len(), 2);
 }
 
@@ -939,7 +1048,8 @@ fn refs_typescript_identifier() {
 fn refs_python_identifier() {
     init_grammar_cache();
     let src = "def greet(name):\n    return name";
-    let refs = find_references("python", src.as_bytes(), &PathBuf::from("test.py"), "name").unwrap();
+    let refs =
+        find_references("python", src.as_bytes(), &PathBuf::from("test.py"), "name").unwrap();
     assert_eq!(refs.len(), 2);
 }
 
@@ -947,9 +1057,16 @@ fn refs_python_identifier() {
 
 #[test]
 fn rust_test_attribute_detected() {
-    let syms = extract("rust", "#[test]\nfn test_foo() { assert!(true); }", "test.rs");
+    let syms = extract(
+        "rust",
+        "#[test]\nfn test_foo() { assert!(true); }",
+        "test.rs",
+    );
     let sym = syms.iter().find(|s| s.name == "test_foo").unwrap();
-    assert!(sym.is_test, "function with #[test] should be marked as test");
+    assert!(
+        sym.is_test,
+        "function with #[test] should be marked as test"
+    );
 }
 
 #[test]
@@ -966,16 +1083,26 @@ mod tests {
     let main_sym = syms.iter().find(|s| s.name == "main").unwrap();
     assert!(!main_sym.is_test, "main should not be marked as test");
     let tests_mod = syms.iter().find(|s| s.name == "tests").unwrap();
-    assert!(tests_mod.is_test, "#[cfg(test)] mod should be marked as test");
+    assert!(
+        tests_mod.is_test,
+        "#[cfg(test)] mod should be marked as test"
+    );
     // helper inside #[cfg(test)] mod should also be marked as test
     if let Some(helper) = syms.iter().find(|s| s.name == "helper") {
-        assert!(helper.is_test, "function inside #[cfg(test)] mod should be marked as test");
+        assert!(
+            helper.is_test,
+            "function inside #[cfg(test)] mod should be marked as test"
+        );
     }
 }
 
 #[test]
 fn rust_normal_fn_not_test() {
-    let syms = extract("rust", "pub fn add(a: i32, b: i32) -> i32 { a + b }", "lib.rs");
+    let syms = extract(
+        "rust",
+        "pub fn add(a: i32, b: i32) -> i32 { a + b }",
+        "lib.rs",
+    );
     let sym = syms.iter().find(|s| s.name == "add").unwrap();
     assert!(!sym.is_test, "normal function should not be marked as test");
 }
@@ -1041,7 +1168,9 @@ fn go_type_alias() {
 fn java_constructor_and_record() {
     let src = "public class Foo {\n    public Foo(int x) {}\n}\n";
     let syms = extract("java", src, "Test.java");
-    let ctor = syms.iter().find(|s| s.name == "Foo" && s.kind == SymbolKind::Fn);
+    let ctor = syms
+        .iter()
+        .find(|s| s.name == "Foo" && s.kind == SymbolKind::Fn);
     assert!(ctor.is_some(), "should find constructor: {syms:?}");
 }
 
@@ -1085,7 +1214,10 @@ fn cpp_using_alias() {
 fn cpp_header_declarations_with_bom() {
     let src = "\u{feff}#pragma once\nclass Guide2DLineDemoAlgorithm {\npublic:\n    QString AlgorithmId() const;\n    bool Validate(const GuideAlgorithmDataView& ctx, QString& errorMsg) const;\n};";
     let syms = extract("cpp", src, "Guide2DLineDemoAlgorithm.h");
-    let class = syms.iter().find(|s| s.name == "Guide2DLineDemoAlgorithm").unwrap();
+    let class = syms
+        .iter()
+        .find(|s| s.name == "Guide2DLineDemoAlgorithm")
+        .unwrap();
     assert_eq!(class.kind, SymbolKind::Class);
     let algorithm_id = syms
         .iter()
@@ -1160,5 +1292,8 @@ fn bash_top_level_var() {
     let f = syms.iter().find(|s| s.name == "foo").unwrap();
     assert_eq!(f.kind, SymbolKind::Fn);
     // local x should NOT be captured
-    assert!(!syms.iter().any(|s| s.name == "x"), "local vars should not be captured");
+    assert!(
+        !syms.iter().any(|s| s.name == "x"),
+        "local vars should not be captured"
+    );
 }
