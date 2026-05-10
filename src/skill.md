@@ -19,7 +19,7 @@ Global: --no-tests (exclude test files/symbols), --json, --limit N, --offset N, 
 
 Aliases: `cx o`, `cx s`, `cx d`, `cx r`
 
-Kinds: fn, struct, enum, trait, type, const, class, interface, module, event
+Kinds: fn, struct, enum, trait, type, const, class, interface, module, event, heading
 
 ## Key patterns
 

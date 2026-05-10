@@ -169,6 +169,7 @@ fn resolve_kind(config: &LanguageConfig, capture_name: &str, node: &Node) -> Opt
         "definition.trait" => Some(SymbolKind::Trait),
         "definition.event" => Some(SymbolKind::Event),
         "definition.field" => Some(SymbolKind::Field),
+        "definition.heading" => Some(SymbolKind::Heading),
         "definition.macro" => Some(SymbolKind::Fn),
         _ => None,
     }

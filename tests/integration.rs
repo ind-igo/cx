@@ -230,15 +230,34 @@ fn version_flag() {
 // --- Error messages ---
 
 #[test]
-fn unsupported_file_type_error() {
+fn markdown_overview_shows_headings() {
     let dir = temp_project(&[
-        ("README.md", "# Hello\n"),
+        ("README.md", "# Hello\nintro\n\n## Usage\nbody\n"),
         ("src/main.rs", "fn main() {}\n"),
     ]);
     let out = cx_in(dir.path()).args(["overview", "README.md"]).output().unwrap();
-    assert_eq!(out.status.code(), Some(1));
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("unsupported file type: .md"), "should hint at unsupported type: {stderr}");
+    assert!(out.status.success(), "overview README.md should succeed: {}", String::from_utf8_lossy(&out.stderr));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("{name,kind,range,signature}:"), "{stdout}");
+    assert!(stdout.contains("Hello,heading"), "{stdout}");
+    assert!(stdout.contains("Usage,heading"), "{stdout}");
+}
+
+#[test]
+fn markdown_definition_returns_section() {
+    let dir = temp_project(&[
+        ("README.md", "# Hello\nintro\n\n## Usage\nbody\n\n### Details\nmore\n\n## Install\nsteps\n"),
+        ("src/main.rs", "fn main() {}\n"),
+    ]);
+    let out = cx_in(dir.path())
+        .args(["definition", "--name", "Usage", "--from", "README.md"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "definition Usage should succeed: {}", String::from_utf8_lossy(&out.stderr));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("## Usage\nbody"), "{stdout}");
+    assert!(stdout.contains("### Details\nmore"), "{stdout}");
+    assert!(!stdout.contains("## Install\nsteps"), "{stdout}");
 }
 
 #[test]

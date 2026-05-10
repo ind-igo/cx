@@ -569,7 +569,7 @@ const fn symbol_priority(kind: SymbolKind) -> u8 {
         SymbolKind::Struct | SymbolKind::Enum | SymbolKind::Trait
         | SymbolKind::Interface | SymbolKind::Class => 0,
         SymbolKind::Fn | SymbolKind::Const | SymbolKind::Type
-        | SymbolKind::Module | SymbolKind::Event => 1,
+        | SymbolKind::Module | SymbolKind::Event | SymbolKind::Heading => 1,
         SymbolKind::Field => 2,
     }
 }

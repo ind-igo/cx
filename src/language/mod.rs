@@ -1,4 +1,5 @@
 mod extract;
+mod markdown;
 mod queries;
 
 use crate::index::{Symbol, SymbolKind};
@@ -33,6 +34,17 @@ pub struct LanguageConfig {
 }
 
 static LANGUAGES: &[LanguageConfig] = &[
+    LanguageConfig {
+        name: "markdown",
+        extensions: &["md", "markdown", "mdown"],
+        grammar_override: &[],
+        download_names: &["markdown", "markdown_inline"],
+        query: "",
+        sig_body_child: None,
+        sig_delimiter: None,
+        kind_overrides: &[],
+        ref_node_types: &[],
+    },
     LanguageConfig {
         name: "rust",
         extensions: &["rs"],
@@ -329,6 +341,11 @@ pub fn find_references(lang: &str, source: &[u8], path: &Path, name: &str) -> Re
 /// Parse a file and extract symbols for the given language.
 /// `path` is used to distinguish .tsx from .ts for grammar selection.
 pub fn parse_and_extract(lang: &str, source: &[u8], path: &Path) -> Result<Vec<Symbol>, LangError> {
+    if lang == "markdown" {
+        parse_source(lang, source, path)?;
+        return Ok(markdown::extract_headings(source));
+    }
+
     let (config, tree, grammar_name) = parse_source(lang, source, path)?;
 
     // Fast path: read lock for cache hits (concurrent reads don't block each other)

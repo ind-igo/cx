@@ -20,6 +20,29 @@ fn extract(lang: &str, src: &str, file: &str) -> Vec<Symbol> {
     parse_and_extract(lang, src.as_bytes(), &PathBuf::from(file)).unwrap()
 }
 
+// --- Markdown ---
+
+#[test]
+fn markdown_headings_are_sections() {
+    let src = "# Title\nintro\n\n## Usage\nbody\n\n### Details\nmore\n\n## Install\nsteps\n";
+    let syms = extract("markdown", src, "README.md");
+
+    assert_eq!(syms.len(), 4);
+    assert_eq!(syms[0].name, "Title");
+    assert_eq!(syms[0].kind, SymbolKind::Heading);
+    assert_eq!(syms[0].signature, "# Title");
+    assert_eq!(&src.as_bytes()[syms[1].byte_range.0..syms[1].byte_range.1], b"## Usage\nbody\n\n### Details\nmore\n\n");
+}
+
+#[test]
+fn markdown_ignores_headings_in_fenced_code() {
+    let src = "# Title\n\n```md\n# Not a heading\n```\n\n## Real\n";
+    let syms = extract("markdown", src, "README.md");
+    let names: Vec<&str> = syms.iter().map(|s| s.name.as_str()).collect();
+
+    assert_eq!(names, vec!["Title", "Real"]);
+}
+
 // --- Rust ---
 
 #[test]

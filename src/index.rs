@@ -11,7 +11,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::language::{LangError, detect_language, parse_and_extract, primary_extension};
 
-pub const INDEX_VERSION: u32 = 8;
+pub const INDEX_VERSION: u32 = 9;
 
 /// Compute the cache path for a given project root.
 /// Returns `~/.cache/cx/indexes/<hash>.db` where hash is derived from the canonical path.
@@ -100,6 +100,7 @@ pub enum SymbolKind {
     Module,
     Event,
     Field,
+    Heading,
 }
 
 impl SymbolKind {
@@ -116,6 +117,7 @@ impl SymbolKind {
             Self::Module => "module",
             Self::Event => "event",
             Self::Field => "field",
+            Self::Heading => "heading",
         }
     }
 }

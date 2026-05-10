@@ -117,6 +117,17 @@ $ cx overview src/main.rs
 
 Use `--full` on directories for the detailed per-file view with ranges and signatures.
 
+Markdown files are indexed by headings. A Markdown definition returns the full section for that heading, including nested subheadings, and stops at the next sibling or parent heading.
+
+```
+$ cx overview README.md
+
+[3]{name,kind,range,signature}:
+  cx,heading,"1-278",# cx
+  Install,heading,"7-30",## Install
+  Usage,heading,"77-199",## Usage
+```
+
 ### Symbols -- search across the project
 
 ```
