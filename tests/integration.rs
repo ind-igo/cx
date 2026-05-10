@@ -49,9 +49,28 @@ fn overview_main_rs() {
     let out = cx().args(["overview", "src/main.rs"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
-    assert!(stdout.contains("{name,kind,signature}:"), "should have TOON header: {stdout}");
+    assert!(stdout.contains("{name,kind,range,signature}:"), "should have TOON header: {stdout}");
     assert!(stdout.contains("main,fn,"));
     assert!(stdout.contains("resolve_root,fn,"));
+}
+
+#[test]
+fn overview_includes_line_ranges() {
+    let dir = temp_project(&[(
+        "src/lib.rs",
+        "pub fn alpha() {\n    beta();\n}\n\npub fn beta() {}\n",
+    )]);
+
+    let out = cx_in(dir.path())
+        .args(["overview", "src/lib.rs"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(stdout.contains("{name,kind,range,signature}:"), "{stdout}");
+    assert!(stdout.contains("alpha,fn,\"1-3\","), "{stdout}");
+    assert!(stdout.contains("beta,fn,\"5\","), "{stdout}");
 }
 
 #[test]
@@ -305,6 +324,26 @@ fn overview_directory_single_level() {
     // Direct files should be listed
     assert!(stdout.contains("main.rs"), "should show direct file: {stdout}");
     assert!(stdout.contains("lib.rs"), "should show direct file: {stdout}");
+}
+
+#[test]
+fn overview_directory_full_keeps_table_shape_with_ranges() {
+    let dir = temp_project(&[
+        ("src/main.rs", "fn main() {}\n"),
+        ("src/lib.rs", "pub fn hello() {}\npub struct Config;\n"),
+        ("src/util/helpers.rs", "pub fn help() {}\n"),
+    ]);
+
+    let out = cx_in(dir.path())
+        .args(["overview", "src/", "--full"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(stdout.contains("{file,name,kind,range,signature}:"), "{stdout}");
+    assert!(stdout.contains("src/util/"), "{stdout}");
+    assert!(stdout.contains("src/lib.rs,hello,fn,\"1\""), "{stdout}");
 }
 
 #[test]

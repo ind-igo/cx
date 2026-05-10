@@ -102,20 +102,20 @@ $ cx overview src/
   main.rs,"Cli, Commands, main, resolve_root, ..."
 ```
 
-Single file -- full symbol table with kinds and signatures:
+Single file -- full symbol table with kinds, line ranges, and signatures:
 
 ```
 $ cx overview src/main.rs
 
-[9]{name,kind,signature}:
-  Cli,struct,struct Cli
-  Commands,enum,enum Commands
-  main,fn,fn main()
-  resolve_root,fn,"fn resolve_root(project: Option<PathBuf>) -> PathBuf"
+[9]{name,kind,range,signature}:
+  Cli,struct,"16-43",struct Cli
+  Commands,enum,"46-113",enum Commands
+  main,fn,"154-248",fn main()
+  resolve_root,fn,"143-152","fn resolve_root(project: Option<PathBuf>) -> PathBuf"
   ...
 ```
 
-Use `--full` on directories for the detailed per-file view with signatures.
+Use `--full` on directories for the detailed per-file view with ranges and signatures.
 
 ### Symbols -- search across the project
 
@@ -199,7 +199,7 @@ With `--json`, paginated output uses `{total, offset, limit, results: [...]}`. N
 
 ## How it works
 
-On first invocation, cx builds an index by parsing all source files with tree-sitter. The index stores symbols, signatures, and byte ranges for every file. Subsequent invocations incrementally update only changed files.
+On first invocation, cx builds an index by parsing all source files with tree-sitter. The index stores symbols, signatures, and byte ranges for every file; overview derives line ranges from those byte ranges. Subsequent invocations incrementally update only changed files.
 
 Language grammars are downloaded on demand as shared libraries via [tree-sitter-language-pack](https://github.com/kreuzberg-dev/tree-sitter-language-pack). Install the ones you need:
 

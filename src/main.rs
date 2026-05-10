@@ -44,12 +44,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Table of contents — symbols + signatures for a file, or symbol names for a directory
+    /// Table of contents — symbols + ranges + signatures for a file, or symbol names for a directory
     #[command(alias = "o")]
     Overview {
         /// File or directory to summarize
         path: PathBuf,
-        /// Show full per-file overview (name, kind, signature) for directories
+        /// Show full per-file overview (name, kind, range, signature) for directories
         #[arg(long)]
         full: bool,
     },
@@ -184,7 +184,7 @@ fn main() {
             if abs.is_dir() {
                 query::dir_overview(&idx, path, full, cli.no_tests, cli.json, &resolve_pagination(None))
             } else {
-                query::symbols(&idx, Some(path), None, None, cli.json, &resolve_pagination(None))
+                query::symbols(&idx, Some(path), None, None, true, cli.json, &resolve_pagination(None))
             }
         }
         Commands::Symbols { ref file, ref name, kind, kinds } => {
@@ -193,7 +193,7 @@ fn main() {
             if kinds {
                 query::kind_counts(&idx, file.as_deref(), cli.json)
             } else {
-                query::symbols(&idx, file.as_deref(), name.as_deref(), kind, cli.json, &resolve_pagination(Some(100)))
+                query::symbols(&idx, file.as_deref(), name.as_deref(), kind, false, cli.json, &resolve_pagination(Some(100)))
             }
         }
         Commands::Definition { ref name, ref from, kind, max_lines } => {

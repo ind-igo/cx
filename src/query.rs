@@ -93,6 +93,16 @@ struct SymbolRowOut {
 }
 
 #[derive(Serialize)]
+struct SymbolRowWithRangeOut {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    file: Option<String>,
+    name: String,
+    kind: String,
+    range: String,
+    signature: String,
+}
+
+#[derive(Serialize)]
 struct DefinitionResult {
     file: String,
     line: usize,
@@ -117,6 +127,7 @@ pub fn symbols(
     file: Option<&Path>,
     name_glob: Option<&str>,
     kind_filter: Option<SymbolKind>,
+    ranges: bool,
     json: bool,
     pg: &Pagination,
 ) -> i32 {
@@ -160,30 +171,55 @@ pub fn symbols(
     rows.sort_by(|a, b| a.file.cmp(b.file).then(a.symbol.name.cmp(&b.symbol.name)));
 
     let single_file = is_single_file;
-    let out: Vec<SymbolRowOut> = rows
-        .into_iter()
-        .map(|r| SymbolRowOut {
-            file: if single_file { None } else { Some(display_path(r.file)) },
-            name: r.symbol.name.clone(),
-            kind: r.symbol.kind.as_str().to_string(),
-            signature: r.symbol.signature.clone(),
-        })
-        .collect();
-
-    let paged = paginate(out, pg);
-
-    if json {
-        if paged.needs_envelope() {
-            print_paginated_json(&paged);
+    let mut line_cache = std::collections::HashMap::new();
+    if ranges {
+        let out: Vec<SymbolRowWithRangeOut> = rows
+            .into_iter()
+            .map(|r| SymbolRowWithRangeOut {
+                file: if single_file { None } else { Some(display_path(r.file)) },
+                name: r.symbol.name.clone(),
+                kind: r.symbol.kind.as_str().to_string(),
+                range: line_range(index, &mut line_cache, r.file, r.symbol.byte_range)
+                    .unwrap_or_default(),
+                signature: r.symbol.signature.clone(),
+            })
+            .collect();
+        let paged = paginate(out, pg);
+        if json {
+            if paged.needs_envelope() {
+                print_paginated_json(&paged);
+            } else {
+                print_json(&paged.items);
+            }
         } else {
-            print_json(&paged.items);
+            print_toon(&paged.items);
+        }
+        if paged.was_truncated() {
+            emit_pagination_hint(paged.total, paged.offset, paged.items.len(), "symbols", "--file PATH | --kind KIND");
         }
     } else {
-        print_toon(&paged.items);
-    }
-
-    if paged.was_truncated() {
-        emit_pagination_hint(paged.total, paged.offset, paged.items.len(), "symbols", "--file PATH | --kind KIND");
+        let out: Vec<SymbolRowOut> = rows
+            .into_iter()
+            .map(|r| SymbolRowOut {
+                file: if single_file { None } else { Some(display_path(r.file)) },
+                name: r.symbol.name.clone(),
+                kind: r.symbol.kind.as_str().to_string(),
+                signature: r.symbol.signature.clone(),
+            })
+            .collect();
+        let paged = paginate(out, pg);
+        if json {
+            if paged.needs_envelope() {
+                print_paginated_json(&paged);
+            } else {
+                print_json(&paged.items);
+            }
+        } else {
+            print_toon(&paged.items);
+        }
+        if paged.was_truncated() {
+            emit_pagination_hint(paged.total, paged.offset, paged.items.len(), "symbols", "--file PATH | --kind KIND");
+        }
     }
 
     0
@@ -514,6 +550,7 @@ struct DirOverviewFullRow {
     file: String,
     name: String,
     kind: String,
+    range: String,
     signature: String,
 }
 
@@ -647,11 +684,13 @@ pub fn dir_overview(
 
     if full {
         let mut rows: Vec<DirOverviewFullRow> = Vec::new();
+        let mut line_cache = std::collections::HashMap::new();
         for (dir_name, (file_count, sym_count)) in &subdirs {
             rows.push(DirOverviewFullRow {
                 file: format_subdir(dir_name),
                 name: format!("({file_count} files, {sym_count} symbols)"),
                 kind: String::new(),
+                range: String::new(),
                 signature: String::new(),
             });
         }
@@ -664,6 +703,7 @@ pub fn dir_overview(
                     file: display_path(path),
                     name: sym.name.clone(),
                     kind: sym.kind.as_str().to_string(),
+                    range: line_range(index, &mut line_cache, path, sym.byte_range).unwrap_or_default(),
                     signature: sym.signature.clone(),
                 });
             }
@@ -672,6 +712,7 @@ pub fn dir_overview(
                     file: display_path(path),
                     name: format!("... (+{} more)", total - DIR_OVERVIEW_MAX_SYMBOLS),
                     kind: String::new(),
+                    range: String::new(),
                     signature: String::new(),
                 });
             }
@@ -739,6 +780,39 @@ fn read_body(root: &Path, file: &Path, byte_range: (usize, usize)) -> Option<(St
     let line = source[..start].iter().filter(|&&b| b == b'\n').count() + 1;
     let body = String::from_utf8_lossy(&source[start..end]).to_string();
     Some((body, line))
+}
+
+fn line_range(
+    index: &Index,
+    cache: &mut std::collections::HashMap<PathBuf, Vec<usize>>,
+    file: &Path,
+    byte_range: (usize, usize),
+) -> Option<String> {
+    let line_starts = match cache.entry(file.to_path_buf()) {
+        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            let source = fs::read(index.root.join(file)).ok()?;
+            let mut starts = vec![0];
+            starts.extend(source.iter().enumerate().filter_map(|(i, &byte)| {
+                (byte == b'\n').then_some(i + 1)
+            }));
+            entry.insert(starts)
+        }
+    };
+
+    let (start, end) = byte_range;
+    if start > end {
+        return None;
+    }
+
+    let end_offset = end.saturating_sub(1).max(start);
+    let start_line = line_starts.partition_point(|&line_start| line_start <= start);
+    let end_line = line_starts.partition_point(|&line_start| line_start <= end_offset);
+    Some(if start_line == end_line {
+        start_line.to_string()
+    } else {
+        format!("{start_line}-{end_line}")
+    })
 }
 
 /// Display a path using forward slashes (consistent across platforms).
