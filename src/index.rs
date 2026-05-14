@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::language::{LangError, detect_language, parse_and_extract, primary_extension};
+use crate::language::{LangError, detect_language, download_names_for, parse_and_extract, primary_extension};
 
-pub const INDEX_VERSION: u32 = 9;
+pub const INDEX_VERSION: u32 = 8;
 
 /// Compute the cache path for a given project root.
 /// Returns `~/.cache/cx/indexes/<hash>.db` where hash is derived from the canonical path.
@@ -200,6 +200,7 @@ fn needs_update(root: &Path, entries: &HashMap<PathBuf, FileData>) -> bool {
         .values()
         .map(|d| d.meta.language.as_str())
         .collect();
+    let installed_grammars = tree_sitter_language_pack::downloaded_languages();
 
     let mut matched_count = 0usize;
     for entry in walk(root) {
@@ -222,9 +223,13 @@ fn needs_update(root: &Path, entries: &HashMap<PathBuf, FileData>) -> bool {
                 matched_count += 1;
             }
             None => {
-                // File not in index. If we've indexed other files of this language,
-                // the grammar is installed and this is a genuinely new file.
-                if indexed_langs.contains(lang) {
+                // File not in index. If we've indexed other files of this
+                // language, or all required grammars are installed, this is a
+                // genuinely new indexable file.
+                let grammar_installed = download_names_for(lang)
+                    .iter()
+                    .all(|name| installed_grammars.iter().any(|installed| installed == name));
+                if indexed_langs.contains(lang) || grammar_installed {
                     return true;
                 }
                 // Otherwise grammar isn't installed — skip, don't trigger update.

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-14
+
+### Added
+- Markdown heading navigation: `.md`, `.markdown`, and `.mdown` files are indexed by headings, and `definition` returns the selected heading section.
+- Line ranges in `overview` output for more precise navigation.
+- `cx symbols --kinds` to list available symbol kinds with counts.
+- Directory paths in `--file` and `--from` filters.
+- C++ header declaration indexing.
+- Windows ARM64 release support.
+
+### Changed
+- References now default to the compact grouped summary; exact matching lines are available with `--context`.
+- Overview includes test files and test symbols by default; use `--no-tests` to exclude them.
+- Absolute path arguments now derive the project root from the provided path instead of only the current working directory.
+- Full index crawling is parallelized.
+- Query coverage expanded across TypeScript, Python, Go, Rust, Java, C++, C, Solidity, Ruby, Lua, Bash, and Zig.
+- `SymbolKind::Method` was collapsed into `fn` for simpler output.
+
+### Fixed
+- Directory overview and symbol/definition filtering now handle current-working-directory and absolute-path resolution more consistently.
+- C++ declaration-only headers at nested paths are indexed correctly.
+
 ## [0.6.3] - 2026-04-04
 
 ### Added

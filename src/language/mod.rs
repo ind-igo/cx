@@ -38,7 +38,7 @@ static LANGUAGES: &[LanguageConfig] = &[
         name: "markdown",
         extensions: &["md", "markdown", "mdown"],
         grammar_override: &[],
-        download_names: &["markdown", "markdown_inline"],
+        download_names: &[],
         query: "",
         sig_body_child: None,
         sig_delimiter: None,
