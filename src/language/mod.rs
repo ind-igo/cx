@@ -111,6 +111,22 @@ static LANGUAGES: &[LanguageConfig] = &[
         ref_node_types: &["identifier", "type_identifier", "field_identifier"],
     },
     LanguageConfig {
+        name: "objc",
+        extensions: &["m", "mm"],
+        grammar_override: &[],
+        download_names: &[],
+        query: queries::OBJC,
+        sig_body_child: Some("compound_statement"),
+        sig_delimiter: None,
+        kind_overrides: &[],
+        ref_node_types: &[
+            "identifier",
+            "type_identifier",
+            "field_identifier",
+            "method_identifier",
+        ],
+    },
+    LanguageConfig {
         name: "cpp",
         extensions: &["cpp", "cc", "cxx", "h", "hpp", "hxx", "hh"],
         grammar_override: &[],

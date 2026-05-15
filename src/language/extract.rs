@@ -106,7 +106,7 @@ pub(super) fn extract_symbols(
             continue;
         };
 
-        let name = match name_n.utf8_text(source) {
+        let mut name = match name_n.utf8_text(source) {
             Ok(s) => {
                 // Strip surrounding quotes from string-literal names (e.g. Zig test names)
                 if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
@@ -125,6 +125,17 @@ pub(super) fn extract_symbols(
 
         let byte_range = (def_n.start_byte(), def_n.end_byte());
         let signature = build_signature(config, def_n, source);
+        if config.name == "objc"
+            && kind == SymbolKind::Fn
+            && (def_n.kind() == "method_definition" || def_n.kind() == "method_declaration")
+        {
+            name = objc_method_name(&signature).unwrap_or(name);
+        } else if config.name == "objc"
+            && kind == SymbolKind::Class
+            && (def_n.kind() == "class_interface" || def_n.kind() == "class_implementation")
+        {
+            name = objc_class_name(&signature).unwrap_or(name);
+        }
         let is_test = detect_test_symbol(config.name, def_n, source);
 
         symbols.push(Symbol {
@@ -137,6 +148,64 @@ pub(super) fn extract_symbols(
     }
 
     deduplicate(symbols)
+}
+
+fn objc_method_name(signature: &str) -> Option<String> {
+    let mut parts = Vec::new();
+    let bytes = signature.as_bytes();
+    let mut i = 0;
+
+    while i < bytes.len() {
+        if bytes[i] == b':' {
+            let mut j = i;
+            while j > 0 && bytes[j - 1].is_ascii_whitespace() {
+                j -= 1;
+            }
+            let end = j;
+            while j > 0 && (bytes[j - 1].is_ascii_alphanumeric() || bytes[j - 1] == b'_') {
+                j -= 1;
+            }
+            if j < end {
+                parts.push(&signature[j..end]);
+            }
+        }
+        i += 1;
+    }
+
+    if !parts.is_empty() {
+        return Some(parts.join(":") + ":");
+    }
+
+    let close = signature.find(')')?;
+    let rest = signature[close + 1..].trim_start();
+    let end = rest
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .unwrap_or(rest.len());
+    (end > 0).then(|| rest[..end].to_string())
+}
+
+fn objc_class_name(signature: &str) -> Option<String> {
+    let rest = signature
+        .strip_prefix("@interface")
+        .or_else(|| signature.strip_prefix("@implementation"))?
+        .trim_start();
+    let name_end = rest
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .unwrap_or(rest.len());
+    if name_end == 0 {
+        return None;
+    }
+
+    let name = &rest[..name_end];
+    let after_name = rest[name_end..].trim_start();
+    if let Some(after_open) = after_name.strip_prefix('(')
+        && let Some(close) = after_open.find(')')
+    {
+        let category = after_open[..close].trim();
+        return Some(format!("{name}({category})"));
+    }
+
+    Some(name.to_string())
 }
 
 fn resolve_kind(config: &LanguageConfig, capture_name: &str, node: &Node) -> Option<SymbolKind> {

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Objective-C support for `.m` and `.mm` files, including classes, protocols, methods, and C functions.
+
 ## [0.7.0] - 2026-05-14
 
 ### Added

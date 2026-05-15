@@ -261,6 +261,38 @@ fn markdown_definition_returns_section() {
 }
 
 #[test]
+fn objc_overview_and_symbols() {
+    let dir = temp_project(&[(
+        "src/Greeter.m",
+        "@interface Greeter : NSObject\n- (void)sayHello:(NSString *)target;\n@end\n\n@implementation Greeter\n- (void)sayHello:(NSString *)target {}\n@end\n",
+    )]);
+    let out = cx_in(dir.path())
+        .args(["overview", "src/Greeter.m"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "objc overview should succeed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(stdout.contains("Greeter,class"), "{stdout}");
+    assert!(stdout.contains("\"sayHello:\",fn"), "{stdout}");
+
+    let out = cx_in(dir.path())
+        .args(["symbols", "--kind", "fn", "--file", "src/Greeter.m"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "objc symbols should succeed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(stdout.contains("\"sayHello:\",fn"), "{stdout}");
+}
+
+#[test]
 fn no_matches_stderr() {
     let out = cx().args(["definition", "--name", "zzz_nonexistent"]).output().unwrap();
     assert_eq!(out.status.code(), Some(0));

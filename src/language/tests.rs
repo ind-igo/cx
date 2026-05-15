@@ -43,6 +43,121 @@ fn markdown_ignores_headings_in_fenced_code() {
     assert_eq!(names, vec!["Title", "Real"]);
 }
 
+// --- Objective-C ---
+
+#[test]
+fn objc_class_protocol_methods_and_selectors() {
+    let src = r#"
+@interface Greeter : NSObject
+@property (nonatomic, copy) NSString *name;
+- (void)sayHello:(NSString *)target;
+- (void)configureWithName:(NSString *)name age:(NSUInteger)age;
+@end
+
+@protocol GreeterDelegate
+- (void)greeterDidGreet:(Greeter *)greeter;
+@end
+
+@implementation Greeter
+- (void)sayHello:(NSString *)target {
+}
+- (void)configureWithName:(NSString *)name age:(NSUInteger)age {
+}
++ (instancetype)sharedGreeter {
+    return nil;
+}
+@end
+"#;
+    let syms = extract("objc", src, "Greeter.m");
+
+    assert!(
+        syms.iter()
+            .any(|s| s.name == "Greeter" && s.kind == SymbolKind::Class)
+    );
+    assert!(
+        syms.iter()
+            .any(|s| s.name == "GreeterDelegate" && s.kind == SymbolKind::Interface)
+    );
+    assert!(
+        syms.iter()
+            .any(|s| s.name == "sayHello:" && s.kind == SymbolKind::Fn)
+    );
+    assert!(
+        syms.iter()
+            .any(|s| s.name == "configureWithName:age:" && s.kind == SymbolKind::Fn)
+    );
+    assert!(
+        syms.iter()
+            .any(|s| s.name == "sharedGreeter" && s.kind == SymbolKind::Fn)
+    );
+}
+
+#[test]
+fn objc_categories_extensions_and_protocol_inheritance() {
+    let src = r#"
+@interface Greeter ()
+- (void)prepare;
+@end
+
+@interface Greeter (Formatting)
+- (NSString *)formattedNameForLocale:(NSString *)locale;
+@end
+
+@protocol GreeterDelegate <NSObject>
+- (void)greeter:(Greeter *)greeter didGreet:(NSString *)name;
+@end
+
+@implementation Greeter (Formatting)
+- (NSString *)formattedNameForLocale:(NSString *)locale {
+    return locale;
+}
+@end
+"#;
+    let syms = extract("objc", src, "Greeter.m");
+
+    assert!(
+        syms.iter()
+            .any(|s| s.name == "Greeter()" && s.kind == SymbolKind::Class)
+    );
+    assert!(
+        syms.iter()
+            .any(|s| s.name == "Greeter(Formatting)" && s.kind == SymbolKind::Class)
+    );
+    assert!(
+        syms.iter()
+            .any(|s| s.name == "GreeterDelegate" && s.kind == SymbolKind::Interface)
+    );
+    assert!(
+        syms.iter()
+            .any(|s| s.name == "formattedNameForLocale:" && s.kind == SymbolKind::Fn)
+    );
+    assert!(
+        syms.iter()
+            .any(|s| s.name == "greeter:didGreet:" && s.kind == SymbolKind::Fn)
+    );
+}
+
+#[test]
+fn objc_c_functions_and_mm_extension() {
+    let src = r#"
+static int add(int a, int b) {
+    return a + b;
+}
+
+void run(void);
+"#;
+    let syms = extract("objc", src, "Greeter.mm");
+
+    assert!(
+        syms.iter()
+            .any(|s| s.name == "add" && s.kind == SymbolKind::Fn)
+    );
+    assert!(
+        syms.iter()
+            .any(|s| s.name == "run" && s.kind == SymbolKind::Fn)
+    );
+}
+
 // --- Rust ---
 
 #[test]
