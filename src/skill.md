@@ -1,6 +1,31 @@
 # cx — Semantic Code Navigation
 
-Prefer cx over reading files. Escalate: overview → symbols → definition/references → Read tool.
+```
+Usage: cx [OPTIONS] <COMMAND>
+
+Commands:
+  overview [OPTIONS] <PATH>             Table of contents — symbols + ranges + signatures for a file, or symbol names for a directory
+  symbols [OPTIONS]                     Search symbols across project
+  definition [OPTIONS] --name <NAME>    Get a function/type/... body without reading the whole file (default limit: 3)
+  references [OPTIONS] --name <NAME>    Find all usages of a symbol across the project
+  lang [OPTIONS] <SUBCOMMAND>           Manage language grammars (sub-commands: add, remove, list, help)
+  help [COMMAND]                        Full command/option list or help on the given subcommand(s)
+
+Options:
+      --root <ROOT>      Project root (defaults to git root)
+      --json             Emit JSON instead of TOON
+      --no-tests         Exclude test files and test symbols from results (`*/tests/* and `*.test.ts`, test_*.py`, ...)
+Pagination options:
+      --limit <LIMIT>    Max number of results to return (overrides per-command default)
+      --offset <N>       Skip the first N results (not counted against limit)
+      --all              Return all results (bypass default limit)
+```
+
+Prefer cx over reading files. Zoom in until you have what you need, then stop:
+`overview` > `symbols` > `definition` or `references`.
+
+Fall back to the Read tool when `cx` can't represent the target (anonymous functions, JSX-inline components, dynamic
+dispatch, string-keyed lookups, non-symbol regions).
 
 ## First-run checks (once per session)
 
@@ -27,47 +52,39 @@ Prefer cx over reading files. Escalate: overview → symbols → definition/refe
    refused" inside the sandbox. Once grammars are installed, all cx queries work inside the sandbox (reads don't need
    network). Re-run `cx overview .` to confirm.
 
-## Quick reference
+## Common Recipes & Extra Info
 
 ```
-cx overview PATH                                     file or directory table of contents
-cx overview DIR --full                               directory overview with ranges + signatures
+cx overview DIR --full                               `--full` also includes kind/range/signature for direct files
 cx symbols [--kind K] [--name GLOB] [--file PATH]    search symbols project-wide
 cx symbols --kinds [--file PATH]                     list distinct kinds with counts
-cx definition --name NAME [--from PATH] [--kind K]   get a function/type body
-cx references --name NAME [--file PATH] [--context]  usages grouped by file; --context exact lines
-cx lang list                                         show supported languages
-cx lang add LANG [LANG...]                           install language grammars
-
-Global: --no-tests (exclude test files/symbols), --json, --limit N, --offset N, --all
+cx definition --name NAME [--from PATH] [--kind K]   get a definition (optionally filtered to specific kind, e.g. function body)
+cx references --name NAME [--file PATH] [--context]  find usages, `--context` will show the line where the use appears
 ```
 
-Aliases: `cx o`, `cx s`, `cx d`, `cx r`
-
-Kinds: fn, struct, enum, trait, type, const, class, interface, module, event, field, heading
+- `--file` and `--from` are identical and restrict the symbol to a precise file, but only if there is an exact match for
+  the path resolved from cwd.
+- Kinds: fn, struct, enum, trait, type, const, class, interface, module, event, field, heading
+- `.gitignore` is honored. Untracked-but-not-ignored files are still indexed.
 
 ## Key patterns
 
-- Start with `cx overview .`, drill into subdirectories — cheaper than ls + reading files
-- `cx definition --name X` gives exact text for Edit tool's `old_string` without reading the whole file
-- `cx references --name X` groups hits by file; add `--context` only when exact source lines are needed
+- Start with `cx overview .`, drill into subdirectories — cheaper than ls + reading files.
+- Can't find a symbol that should exist? Make sure the language grammar is installed via `cx lang list`.
+- `cx definition --name X` gives exact text for Edit tool's `old_string` without reading the whole file.
+- `cx references --name X` groups hits by file; add `--context` only when exact source lines are needed.
 - When re-entering an unfamiliar area or picking up a topic after a gap, use `cx overview` / `cx definition` to
   re-orient — don't re-read full files
-- Check signatures for `pub`/`export` to identify public API without reading the file
+- Check signatures for `pub`/`export` to identify public API without reading the file.
+- In Claude's sandbox mode, cannot write the cache's default location. Prompt to add to permissions or to set the
+  `$CX_CACHE_DIR` env var.
 
 ## Pagination
 
-Default limits: definition 3, symbols 100, references 50. When truncated, stderr shows:
+Default limits: overview: unlimited, definition 3, symbols 100, references 50.
 
-```
-cx: 3/32 definitions for "X" | --from PATH to narrow | --offset 3 for more | --all
-```
+When truncated, stderr shows: `cx: 3/32 definitions for "X"`. Use `--file` (or `--from`) and `--kind` to narrow, or use
+`--offset` to get further pages, or `--all` to get all results.
 
-`--offset N` pages forward, `--all` bypasses, `--limit N` overrides. Narrow with `--from`/`--file`/`--kind` before
-paging.
-
-JSON: paginated → `{total, offset, limit, results: [...]}`, non-paginated → bare array.
-
-## Missing grammars
-
-If cx reports a missing grammar, install with `cx lang add <lang>`. Run `cx lang list` to see what's installed.
+When not limited, `--json` returns an array of results. When limited, it returns an object with
+shape `{total, offset, limit, results: <array containing $limit results>}`.
