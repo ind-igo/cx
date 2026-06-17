@@ -46,11 +46,10 @@ dispatch, string-keyed lookups, non-symbol regions).
    Install with: cx lang add typescript markdown
    ```
 
-   Run that suggested command **with the sandbox disabled** (`dangerouslyDisableSandbox: true`) — cx fetches grammars
-   from
-   GitHub releases and its Rust HTTP client doesn't honor the sandbox HTTP(S)_PROXY env vars, so it hits "Connection
-   refused" inside the sandbox. Once grammars are installed, all cx queries work inside the sandbox (reads don't need
-   network). Re-run `cx overview .` to confirm.
+   If your harness sandboxes network egress, the install will fail with "Connection refused" when `cx` fetches the
+   grammars
+   from GitHub. Run the install outside the sandbox, or grant network access for the install command. Once grammars are
+   cached, normal cx queries don't need network. Re-run `cx overview .` to confirm.
 
 ## Common Recipes & Extra Info
 
@@ -76,8 +75,8 @@ cx references --name NAME [--file PATH] [--context]  find usages, `--context` wi
 - When re-entering an unfamiliar area or picking up a topic after a gap, use `cx overview` / `cx definition` to
   re-orient — don't re-read full files
 - Check signatures for `pub`/`export` to identify public API without reading the file.
-- In Claude's sandbox mode, cannot write the cache's default location. Prompt to add to permissions or to set the
-  `$CX_CACHE_DIR` env var.
+- If your harness restricts writes outside the project root, the default cache location won't be writable.
+  Set `$CX_CACHE_DIR` to a project-local path, or grant write permission to the default cache dir.
 
 ## Pagination
 
