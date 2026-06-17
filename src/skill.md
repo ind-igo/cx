@@ -5,11 +5,11 @@ Prefer cx over reading files. Escalate: overview → symbols → definition/refe
 ## Quick reference
 
 ```
-cx overview PATH                                    file or directory table of contents
-cx overview DIR --full                              directory overview with ranges + signatures
-cx symbols [--kind K] [--name GLOB] [--file PATH]   search symbols project-wide
+cx overview PATH                                     file or directory table of contents
+cx overview DIR --full                               directory overview with ranges + signatures
+cx symbols [--kind K] [--name GLOB] [--file PATH]    search symbols project-wide
 cx symbols --kinds [--file PATH]                     list distinct kinds with counts
-cx definition --name NAME [--from PATH] [--kind K]  get a function/type body
+cx definition --name NAME [--from PATH] [--kind K]   get a function/type body
 cx references --name NAME [--file PATH] [--context]  usages grouped by file; --context exact lines
 cx lang list                                         show supported languages
 cx lang add LANG [LANG...]                           install language grammars
@@ -37,7 +37,8 @@ Default limits: definition 3, symbols 100, references 50. When truncated, stderr
 cx: 3/32 definitions for "X" | --from PATH to narrow | --offset 3 for more | --all
 ```
 
-`--offset N` pages forward, `--all` bypasses, `--limit N` overrides. Narrow with `--from`/`--file`/`--kind` before paging.
+`--offset N` pages forward, `--all` bypasses, `--limit N` overrides. Narrow with `--from`/`--file`/`--kind` before
+paging.
 
 JSON: paginated → `{total, offset, limit, results: [...]}`, non-paginated → bare array.
 
