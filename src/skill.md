@@ -1,3 +1,8 @@
+---
+name: cx
+description: Semantic code navigation via the cx CLI — symbol search, definitions, references, file/dir overviews. Use when you have a symbol name or want to orient in unfamiliar code; prefer over reading whole files.
+---
+
 # cx — Semantic Code Navigation
 
 ```
