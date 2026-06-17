@@ -51,7 +51,8 @@ Kinds: fn, struct, enum, trait, type, const, class, interface, module, event, he
 - Start with `cx overview .`, drill into subdirectories — cheaper than ls + reading files
 - `cx definition --name X` gives exact text for Edit tool's `old_string` without reading the whole file
 - `cx references --name X` groups hits by file; add `--context` only when exact source lines are needed
-- After context compression, use `cx overview` / `cx definition` to re-orient — don't re-read full files
+- When re-entering an unfamiliar area or picking up a topic after a gap, use `cx overview` / `cx definition` to
+  re-orient — don't re-read full files
 - Check signatures for `pub`/`export` to identify public API without reading the file
 
 ## Pagination
