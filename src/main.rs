@@ -5,7 +5,7 @@ mod query;
 mod language;
 mod util;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -105,6 +105,11 @@ enum Commands {
     },
     /// Print the agent skill file to stdout
     Skill,
+    /// Generate a shell completion script
+    Completion {
+        /// Shell to generate completions for
+        shell: clap_complete::Shell,
+    },
     /// Manage the index cache
     Cache {
         #[command(subcommand)]
@@ -216,6 +221,12 @@ fn main() {
         }
         Commands::Skill => {
             print!("{}", include_str!("skill.md"));
+            0
+        }
+        Commands::Completion { shell } => {
+            let mut cmd = Cli::command();
+            let bin_name = cmd.get_name().to_string();
+            clap_complete::generate(shell, &mut cmd, bin_name, &mut std::io::stdout());
             0
         }
         Commands::Cache { action } => {

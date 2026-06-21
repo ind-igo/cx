@@ -926,3 +926,27 @@ fn explicit_root_overrides_path_hint() {
     // Should fail because B's path isn't under A's root
     assert!(!out.status.success(), "--root should override path-based discovery");
 }
+
+#[test]
+fn completion_emits_script_for_each_shell() {
+    // Each shell should produce a non-empty script and exit successfully.
+    // Spot-check a shell-specific marker so we know the right generator ran.
+    let cases = [
+        ("bash", "_cx()"),
+        ("zsh", "#compdef cx"),
+        ("fish", "complete -c cx"),
+        ("powershell", "Register-ArgumentCompleter"),
+    ];
+    for (shell, marker) in cases {
+        let out = cx().args(["completion", shell]).output().unwrap();
+        assert!(out.status.success(), "completion {shell} should succeed: {}", String::from_utf8_lossy(&out.stderr));
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains(marker), "completion {shell} missing marker {marker:?}: {stdout}");
+    }
+}
+
+#[test]
+fn completion_rejects_unknown_shell() {
+    let out = cx().args(["completion", "notashell"]).output().unwrap();
+    assert!(!out.status.success(), "unknown shell should fail");
+}

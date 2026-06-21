@@ -208,6 +208,26 @@ Use `--offset N` to page forward, `--all` to bypass the limit, or `--limit N` to
 
 With `--json`, paginated output uses `{total, offset, limit, results: [...]}`. Non-paginated output remains a bare array.
 
+## Shell completion
+
+`cx completion <shell>` prints a completion script to stdout. Supported shells: `bash`, `zsh`, `fish`, `powershell`, `elvish`.
+
+```bash
+# Bash — current shell
+source <(cx completion bash)
+# Bash — persist (Linux)
+cx completion bash | sudo tee /etc/bash_completion.d/cx > /dev/null
+
+# Zsh — add to a directory on your $fpath, e.g.
+cx completion zsh > "${fpath[1]}/_cx"
+
+# Fish
+cx completion fish > ~/.config/fish/completions/cx.fish
+
+# PowerShell — add to your profile
+cx completion powershell | Out-String | Invoke-Expression
+```
+
 ## How it works
 
 On first invocation, cx builds an index by parsing all source files with tree-sitter. The index stores symbols, signatures, and byte ranges for every file; overview derives line ranges from those byte ranges. Subsequent invocations incrementally update only changed files.
