@@ -128,7 +128,8 @@ fn local_language_is_copied_and_query_changes_reindex_unchanged_files() {
     assert_eq!(f.names(), ["hello", "main"]);
     let list = f.ok(&["lang", "list"]);
     assert!(String::from_utf8_lossy(&list.stdout).contains("example         [override]"));
-    assert!(String::from_utf8_lossy(&list.stdout).contains(f.bundle.to_str().unwrap()));
+    let source = fs::canonicalize(&f.bundle).unwrap();
+    assert!(String::from_utf8_lossy(&list.stdout).contains(source.to_str().unwrap()));
     let definition = f.ok(&["definition", "--name", "hello"]);
     assert!(String::from_utf8_lossy(&definition.stdout).contains("fn hello() {}"));
     let refs = f.ok(&["--json", "references", "--name", "hello", "--context"]);
