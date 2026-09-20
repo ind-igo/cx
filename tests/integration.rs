@@ -118,7 +118,7 @@ fn json_overview() {
 
 #[test]
 fn json_definition_always_array() {
-    let out = cx().args(["--json", "definition", "--name", "main"]).output().unwrap();
+    let out = cx().args(["--json", "definition", "--name", "main", "--from", "src/main.rs"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success());
     let parsed: serde_json::Value = serde_json::from_str(&stdout)
@@ -843,7 +843,7 @@ fn json_paginated_has_metadata() {
 #[test]
 fn no_pagination_when_under_limit() {
     // Single match — should produce bare array, no pagination metadata
-    let out = cx().args(["--json", "definition", "--name", "main"]).output().unwrap();
+    let out = cx().args(["--json", "definition", "--name", "main", "--from", "src/main.rs"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
     let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert!(parsed.is_array(), "single result should be bare array: {stdout}");

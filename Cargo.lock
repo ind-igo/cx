@@ -469,13 +469,15 @@ dependencies = [
 
 [[package]]
 name = "cx-cli"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "bincode",
+ "cc",
  "clap",
  "clap_complete",
  "dirs",
  "ignore",
+ "libloading",
  "memchr",
  "rayon",
  "redb",
@@ -484,6 +486,7 @@ dependencies = [
  "tempfile",
  "toon-format",
  "tree-sitter",
+ "tree-sitter-bend2",
  "tree-sitter-language-pack",
 ]
 
@@ -1898,6 +1901,16 @@ dependencies = [
  "regex-syntax",
  "serde_json",
  "streaming-iterator",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-bend2"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ddf4353a57c0beb3184db2d742e5cb367438f26e7fb733d33a7c657b9ea8910"
+dependencies = [
+ "cc",
  "tree-sitter-language",
 ]
 

@@ -136,7 +136,7 @@ pub(super) fn extract_symbols(
         {
             name = objc_class_name(&signature).unwrap_or(name);
         }
-        let is_test = detect_test_symbol(config.name, def_n, source);
+        let is_test = detect_test_symbol(&config.name, def_n, source);
 
         symbols.push(Symbol {
             name,
@@ -212,15 +212,15 @@ fn resolve_kind(config: &LanguageConfig, capture_name: &str, node: &Node) -> Opt
     let node_kind = node.kind();
 
     // Exact match on (capture_name, node_kind)
-    for &(cap, nk, sk) in config.kind_overrides {
+    for (cap, nk, sk) in &config.kind_overrides {
         if cap == capture_name && nk == node_kind {
-            return Some(sk);
+            return Some(*sk);
         }
     }
     // Wildcard match (empty node_kind)
-    for &(cap, nk, sk) in config.kind_overrides {
+    for (cap, nk, sk) in &config.kind_overrides {
         if cap == capture_name && nk.is_empty() {
-            return Some(sk);
+            return Some(*sk);
         }
     }
 
@@ -250,7 +250,7 @@ fn build_signature(config: &LanguageConfig, node: Node, source: &[u8]) -> String
     let text = &source[start..end];
 
     // Strategy 1: find body child node, take text before it
-    if let Some(body_kind) = config.sig_body_child {
+    if let Some(body_kind) = &config.sig_body_child {
         let body_field = node.child_by_field_name(body_kind);
         let mut walker = node.walk();
         for child in node.children(&mut walker) {

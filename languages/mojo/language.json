@@ -1,0 +1,9 @@
+{
+  "name": "mojo",
+  "extensions": ["mojo", "🔥"],
+  "grammar": "mojo",
+  "library": "parser.so",
+  "query": "symbols.scm",
+  "ref_node_types": ["identifier", "escaped_identifier_content"],
+  "sig_body_child": "body"
+}

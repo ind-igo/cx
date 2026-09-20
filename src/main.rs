@@ -123,15 +123,21 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum LangAction {
-    /// Download and install language grammars
+    /// Install language grammars
     Add {
         /// Language names (e.g. rust typescript python)
         languages: Vec<String>,
+        /// Install one language from a local directory containing language.json
+        #[arg(long)]
+        from: Option<PathBuf>,
     },
     /// Remove installed language grammars
     Remove {
         /// Language names to remove
         languages: Vec<String>,
+        /// Remove local overrides, restoring default grammars
+        #[arg(long = "override")]
+        local_override: bool,
     },
     /// List supported languages and their install status
     List,
@@ -225,8 +231,8 @@ fn main() {
         }
         Commands::Lang { action } => {
             match action {
-                LangAction::Add { languages } => lang::add(&languages),
-                LangAction::Remove { languages } => lang::remove(&languages),
+                LangAction::Add { languages, from } => lang::add(&languages, from.as_deref()),
+                LangAction::Remove { languages, local_override } => lang::remove(&languages, local_override),
                 LangAction::List => lang::list(),
             }
         }

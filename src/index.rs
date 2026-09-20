@@ -11,7 +11,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::language::{LangError, detect_language, download_names_for, parse_and_extract, primary_extension};
 
-pub const INDEX_VERSION: u32 = 8;
+pub const INDEX_VERSION: u32 = 9;
 
 /// Compute the cache path for a given project root.
 /// Returns `~/.cache/cx/indexes/<hash>.db` where hash is derived from the canonical path.
@@ -85,7 +85,7 @@ pub struct Symbol {
     pub is_test: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]
 #[clap(rename_all = "lowercase")]
 pub enum SymbolKind {
@@ -158,7 +158,8 @@ fn load_entries(db: &impl ReadableDatabase) -> Option<HashMap<PathBuf, FileData>
         let val = table.get("version").ok()??;
         let bytes = val.value();
         if bytes.len() == 4 {
-            Some(u32::from_le_bytes(bytes.try_into().unwrap()) == INDEX_VERSION)
+            Some(u32::from_le_bytes(bytes.try_into().unwrap()) == INDEX_VERSION
+                && table.get("languages").ok()??.value() == crate::language::fingerprint().to_le_bytes())
         } else {
             None
         }
@@ -226,9 +227,12 @@ fn needs_update(root: &Path, entries: &HashMap<PathBuf, FileData>) -> bool {
                 // File not in index. If we've indexed other files of this
                 // language, or all required grammars are installed, this is a
                 // genuinely new indexable file.
-                let grammar_installed = download_names_for(lang)
-                    .iter()
-                    .all(|name| installed_grammars.iter().any(|installed| installed == name));
+                let grammar_installed = crate::language::overrides::get(lang).is_some() || if crate::language::bundled::NAMES.contains(&lang) {
+                    crate::language::bundled::installed().contains(&lang)
+                } else {
+                    download_names_for(lang).iter()
+                        .all(|name| installed_grammars.iter().any(|installed| installed == name))
+                };
                 if indexed_langs.contains(lang) || grammar_installed {
                     return true;
                 }
@@ -540,6 +544,7 @@ impl Index {
                 return;
             };
             let _ = table.insert("version", INDEX_VERSION.to_le_bytes().as_slice());
+            let _ = table.insert("languages", crate::language::fingerprint().to_le_bytes().as_slice());
         }
 
         // Write files and symbols

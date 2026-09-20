@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-09-21
+
+### Added
+- Bundle current Mojo and Bend 2 parsers and symbol queries in cx. Install offline
+  with `cx lang add mojo bend`, using the same list/remove commands as other languages.
+- Install local parser/query overrides with `cx lang add NAME --from DIR`,
+  including languages outside the language pack. `cx lang list` shows their
+  source; `cx lang remove NAME --override` restores the default.
+- Rebuild indexes when override parsers, queries, or settings change; validate
+  replacements before activation and report broken active overrides explicitly.
+
 ## [0.7.3] - 2026-09-20
 
 ### Added

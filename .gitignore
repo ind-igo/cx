@@ -1,2 +1,4 @@
 /target
 .ralph/
+
+/languages/*/parser.so

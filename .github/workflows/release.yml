@@ -47,13 +47,14 @@ jobs:
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../cx-${{ matrix.target }}.tar.gz cx
+          cp ../../../THIRD_PARTY_NOTICES .
+          tar czf ../../../cx-${{ matrix.target }}.tar.gz cx THIRD_PARTY_NOTICES
           cd ../../..
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Compress-Archive -Path "target/${{ matrix.target }}/release/cx.exe" -DestinationPath "cx-${{ matrix.target }}.zip"
+          Compress-Archive -Path "target/${{ matrix.target }}/release/cx.exe", "THIRD_PARTY_NOTICES" -DestinationPath "cx-${{ matrix.target }}.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: cx-${{ matrix.target }}

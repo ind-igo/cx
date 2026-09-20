@@ -1,0 +1,9 @@
+{
+  "name": "bend",
+  "extensions": ["bend"],
+  "grammar": "bend",
+  "library": "parser.so",
+  "query": "symbols.scm",
+  "ref_node_types": ["identifier", "scoped_identifier"],
+  "sig_body_child": "body"
+}

@@ -232,10 +232,11 @@ cx completion powershell | Out-String | Invoke-Expression
 
 On first invocation, cx builds an index by parsing all source files with tree-sitter. The index stores symbols, signatures, and byte ranges for every file; overview derives line ranges from those byte ranges. Subsequent invocations incrementally update only changed files.
 
-Language grammars are downloaded on demand as shared libraries via [tree-sitter-language-pack](https://github.com/kreuzberg-dev/tree-sitter-language-pack). Install the ones you need:
+Most language grammars are downloaded as shared libraries via [tree-sitter-language-pack](https://github.com/kreuzberg-dev/tree-sitter-language-pack). Current Mojo and Bend 2 parsers are compiled into cx and install offline. Install the ones you need:
 
 ```bash
 cx lang add rust typescript python
+cx lang add mojo bend
 cx lang list        # see what's installed
 cx lang remove lua  # remove one
 ```
@@ -268,7 +269,25 @@ Overview, symbols, and references use [TOON](https://toonformat.dev) -- a token-
 
 ## Adding a language
 
-cx uses tree-sitter grammars loaded dynamically via `tree-sitter-language-pack`. To add support for a new language:
+Mojo and Bend 2 ship with cx: use `cx lang add mojo bend`. Their parsers and
+symbol queries are included in the binary; no source checkout, compiler, or
+Tree-sitter CLI is needed. `cx lang remove mojo` disables the bundled language.
+
+To use a newer parser or register another language, install
+a [local override](languages/README.md):
+
+```sh
+cx lang add mojo --from /path/to/custom-mojo
+cx lang list
+cx lang remove mojo --override
+```
+
+The directory must contain a built native parser, matching symbol queries, and
+`language.json`. Installation validates and copies these files, takes precedence
+over the default parser, and invalidates cached indexes when the language changes.
+Removing the override restores the previously installed default parser.
+
+For a language supplied by `tree-sitter-language-pack`, add built-in support as follows:
 
 1. In `src/language/mod.rs`, add:
    - A query constant with tree-sitter patterns for the language's symbols
